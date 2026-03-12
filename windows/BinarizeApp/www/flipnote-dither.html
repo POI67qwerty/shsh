@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>うごメモ風 トーン変換</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1+Code:wght@400;700&display=swap');
+
+  :root {
+    --bg: #1a6fb5;       /* うごメモの青 */
+    --bg2: #1258a0;
+    --panel: #f5f0e8;    /* 紙っぽい白 */
+    --panel2: #e8e3d8;
+    --border: #555;
+    --dark: #111;
+    --accent: #e63323;
+    --accent2: #2255cc;
+    --text: #111;
+    --dim: #888;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    background-image:
+      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 8px 8px;
+    font-family: 'M PLUS 1 Code', monospace;
+    min-height: 100vh;
+    color: var(--text);
+  }
+
+  .app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  /* ヘッダー：うごメモ風ロゴ */
+  header {
+    background: var(--panel);
+    border: 3px solid var(--dark);
+    border-radius: 8px 8px 0 0;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
+    margin-bottom: 3px;
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    background: var(--dark);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    border: 2px solid var(--dark);
+  }
+
+  h1 {
+    font-family: 'DotGothic16', monospace;
+    font-size: clamp(14px, 3vw, 22px);
+    color: var(--dark);
+    line-height: 1.3;
+  }
+
+  h1 .sub {
+    display: block;
+    font-size: 10px;
+    color: var(--dim);
+    font-family: 'M PLUS 1 Code', monospace;
+    margin-top: 2px;
+    letter-spacing: 2px;
+  }
+
+  /* メインパネル */
+  .main-panel {
+    background: var(--panel);
+    border: 3px solid var(--dark);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
+    overflow: hidden;
+  }
+
+  /* タブバー */
+  .tab-bar {
+    display: flex;
+    background: var(--panel2);
+    border-bottom: 2px solid var(--dark);
+  }
+
+  .tab {
+    padding: 8px 18px;
+    font-family: 'DotGothic16', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+    transition: background 0.1s;
+    color: var(--dim);
+    user-select: none;
+  }
+
+  .tab.active {
+    background: var(--panel);
+    color: var(--dark);
+    border-bottom: 2px solid var(--panel);
+    margin-bottom: -2px;
+    font-weight: bold;
+  }
+
+  /* レイアウト */
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 600px;
+  }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  /* サイドバー */
+  .sidebar {
+    border-right: 2px solid var(--border);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+  }
+
+  .section-title {
+    font-family: 'DotGothic16', monospace;
+    font-size: 10px;
+    color: var(--dark);
+    background: var(--dark);
+    color: var(--panel);
+    padding: 4px 10px;
+    margin: -2px -2px 8px;
+    letter-spacing: 2px;
+  }
+
+  .section {
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .section-body {
+    padding: 10px;
+  }
+
+  /* アップロード */
+  .upload-zone {
+    display: block; /* labelなのでblock化 */
+    border: 2px dashed var(--border);
+    border-radius: 4px;
+    padding: 20px 10px;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(255,255,255,0.5);
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent; /* iPhoneのタップハイライト除去 */
+    user-select: none;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over, .upload-zone:active {
+    background: rgba(34,85,204,0.08);
+    border-color: var(--accent2);
+  }
+
+  .upload-zone .icon { font-size: 28px; display: block; margin-bottom: 6px; }
+  .upload-zone .txt { font-size: 10px; color: var(--dim); line-height: 1.7; }
+  .upload-zone .txt strong { color: var(--accent2); display: block; font-size: 11px; }
+
+  /* パレット */
+  .palette-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  .color-chip {
+    width: 28px;
+    height: 28px;
+    border-radius: 3px;
+    border: 2px solid var(--dark);
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    position: relative;
+  }
+
+  /* クリックで色変更できることを示す鉛筆アイコン */
+  .color-chip::after {
+    content: '✏';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    background: rgba(0,0,0,0.45);
+    color: white;
+    opacity: 0;
+    transition: opacity 0.15s;
+    border-radius: 1px;
+  }
+
+  .color-chip:hover { transform: scale(1.15); z-index: 2; }
+  .color-chip:hover::after { opacity: 1; }
+
+  .color-chip.selected {
+    box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent2);
+  }
+
+  .color-chip .x-btn {
+    display: none;
+    position: absolute;
+    top: -6px; right: -6px;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    font-size: 8px;
+    color: white;
+    text-align: center;
+    line-height: 14px;
+    border: 1px solid white;
+    z-index: 3;
+  }
+
+  .color-chip:hover .x-btn { display: block; }
+
+  .add-chip {
+    width: 28px; height: 28px;
+    border: 2px dashed var(--border);
+    border-radius: 3px;
+    background: rgba(255,255,255,0.6);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 24px;
+    text-align: center;
+    color: var(--dim);
+    transition: all 0.15s;
+  }
+
+  .add-chip:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  /* プリセットボタン */
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .preset-btn {
+    padding: 4px 8px;
+    font-family: 'DotGothic16', monospace;
+    font-size: 9px;
+    border: 1px solid var(--border);
+    background: white;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.1s;
+    color: var(--dark);
+  }
+
+  .preset-btn:hover { background: var(--dark); color: var(--panel); }
+
+  /* トーン表示プレビュー */
+  .tone-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 3px;
+    margin-bottom: 8px;
+  }
+
+  .tone-cell {
+    aspect-ratio: 1;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    background: white;
+  }
+
+  .tone-cell canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+  .tone-cell.active { box-shadow: 0 0 0 2px var(--accent2); }
+
+  /* スライダー */
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .ctrl-label {
+    font-size: 10px;
+    color: var(--dim);
+    white-space: nowrap;
+    min-width: 60px;
+  }
+
+  .ctrl-val {
+    font-size: 10px;
+    color: var(--accent2);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--dark);
+    border-radius: 2px;
+    cursor: pointer;
+    border: 2px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--dark);
+  }
+
+  /* セレクト */
+  select {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: white;
+    padding: 6px 8px;
+    font-family: 'M PLUS 1 Code', monospace;
+    font-size: 10px;
+    border-radius: 2px;
+    margin-bottom: 8px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* ボタン */
+  .btn-go {
+    width: 100%;
+    padding: 12px;
+    background: var(--dark);
+    color: var(--panel);
+    font-family: 'DotGothic16', monospace;
+    font-size: 12px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 3px;
+    transition: all 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-go::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transition: transform 0.3s;
+  }
+
+  .btn-go:hover::after { transform: scaleX(1); }
+  .btn-go:hover { background: #333; }
+  .btn-go:disabled { background: var(--border); cursor: not-allowed; }
+  .btn-go:disabled::after { display: none; }
+
+  .btn-dl {
+    width: 100%;
+    padding: 8px;
+    background: white;
+    color: var(--dark);
+    font-family: 'DotGothic16', monospace;
+    font-size: 10px;
+    border: 2px solid var(--dark);
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    margin-top: 6px;
+    transition: all 0.15s;
+  }
+
+  .btn-dl:hover { background: var(--dark); color: var(--panel); }
+  .btn-dl:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* キャンバスエリア */
+  .canvas-area {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .canvas-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .canvas-box {
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: white;
+  }
+
+  .canvas-box-title {
+    font-family: 'DotGothic16', monospace;
+    font-size: 9px;
+    background: var(--dark);
+    color: var(--panel);
+    padding: 5px 10px;
+    letter-spacing: 2px;
+  }
+
+  .canvas-holder {
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: repeating-conic-gradient(#ddd 0% 25%, white 0% 50%) 0 0 / 12px 12px;
+    position: relative;
+  }
+
+  canvas {
+    max-width: 100%;
+    max-height: 420px;
+    image-rendering: pixelated;
+    display: block;
+  }
+
+  .placeholder {
+    font-family: 'DotGothic16', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    text-align: center;
+    line-height: 2.2;
+  }
+
+  .placeholder .big { font-size: 36px; display: block; }
+
+  /* リアルタイム更新中の軽量オーバーレイ */
+  .rt-badge {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: var(--accent2);
+    color: white;
+    font-family: 'DotGothic16', monospace;
+    font-size: 8px;
+    padding: 3px 7px;
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 6;
+    letter-spacing: 1px;
+  }
+  .rt-badge.show { opacity: 1; }
+    position: absolute;
+    inset: 0;
+    background: rgba(245,240,232,0.88);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+  }
+
+  .loading.on { display: flex; }
+
+  .loading-text {
+    font-family: 'DotGothic16', monospace;
+    font-size: 11px;
+    color: var(--dark);
+    animation: blink 0.8s infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.1} }
+
+  /* 情報バー */
+  .info-bar {
+    display: flex;
+    gap: 16px;
+    padding: 8px 12px;
+    background: var(--dark);
+    color: var(--panel);
+    font-size: 10px;
+    border-radius: 3px;
+    flex-wrap: wrap;
+  }
+
+  .info-item span { color: #aaa; }
+  .info-item strong { color: #9ef; }
+
+  /* トーンプレビューパネル */
+  #tonePreviewPanel {
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .tone-preview-inner {
+    padding: 10px;
+    background: white;
+  }
+
+  .tone-row-label {
+    font-size: 9px;
+    color: var(--dim);
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+  }
+
+  .color-picker-hidden {
+    position: absolute;
+    opacity: 0;
+    width: 0; height: 0;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ホームに戻るナビ -->
+  <nav style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <a href="index.html" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px 8px 12px;background:rgba(26,26,31,.9);border:1px solid #2e2e3a;border-radius:8px;color:#7a7a90;text-decoration:none;font-size:.75rem;font-family:'Courier New',monospace;letter-spacing:.08em;transition:all .15s;-webkit-tap-highlight-color:transparent" onmouseover="this.style.borderColor='#7cffb2';this.style.color='#7cffb2';this.style.boxShadow='0 0 12px #7cffb220'" onmouseout="this.style.borderColor='#2e2e3a';this.style.color='#7a7a90';this.style.boxShadow='none'">
+      <span>◂</span> HOME
+    </a>
+    <div style="flex:1;height:1px;background:linear-gradient(to right,#2e2e3a,transparent)"></div>
+    <span style="font-size:.62rem;letter-spacing:.2em;color:#7a7a90;text-transform:uppercase">FLIPNOTE DITHER</span>
+  </nav>
+  <header>
+    <div class="logo-icon">🎨</div>
+    <h1>
+      うごメモ風 トーン変換ツール
+      <span class="sub">Flipnote-Style Tone Pattern Converter</span>
+    </h1>
+  </header>
+
+  <div class="main-panel">
+    <div class="tab-bar">
+      <div class="tab active">▶ 変換</div>
+      <div class="tab" onclick="showToneInfo()">トーン表</div>
+    </div>
+
+    <div class="layout">
+      <!-- サイドバー -->
+      <div class="sidebar">
+
+        <!-- 画像入力 -->
+        <div class="section">
+          <div class="section-title">📁 画像を読み込む</div>
+          <div class="section-body">
+            <!-- iPhoneはposition:absoluteのinputがタップ非反応になるのでlabelで囲む方式に変更 -->
+            <label for="fileInput" class="upload-zone" id="uploadZone">
+              <span class="icon">🖼️</span>
+              <div class="txt">
+                <strong>タップ or クリック</strong>
+                PNG / JPG / GIF
+              </div>
+            </label>
+            <input type="file" id="fileInput" accept="image/*"
+              style="position:fixed;top:-9999px;left:-9999px;opacity:0;width:1px;height:1px;">
+          </div>
+        </div>
+
+        <!-- 原色パレット -->
+        <div class="section">
+          <div class="section-title">🎨 原色パレット</div>
+          <div class="section-body">
+            <div class="tone-row-label">プリセット</div>
+            <div class="preset-row" style="margin-bottom:8px">
+              <button class="preset-btn" onclick="setPreset('flipnote')">うごメモ</button>
+              <button class="preset-btn" onclick="setPreset('primary')">原色</button>
+              <button class="preset-btn" onclick="setPreset('gameboy')">GB</button>
+              <button class="preset-btn" onclick="setPreset('mono')">白黒</button>
+            </div>
+            <div class="palette-row" id="paletteRow"></div>
+            <input type="color" class="color-picker-hidden" id="colorPicker">
+            <button class="add-chip" onclick="openPicker()" title="色を追加">+</button>
+          </div>
+        </div>
+
+        <!-- ドットサイズ・設定 -->
+        <div class="section">
+          <div class="section-title">⚙️ 設定</div>
+          <div class="section-body">
+            <div class="ctrl-row">
+              <span class="ctrl-label">ドットサイズ</span>
+              <input type="range" id="dotSize" min="2" max="12" value="2"
+                oninput="document.getElementById('dotSizeVal').textContent=this.value+'px'; scheduleRT()">
+              <span class="ctrl-val" id="dotSizeVal">2px</span>
+            </div>
+
+            <div class="ctrl-row">
+              <span class="ctrl-label">明度補正</span>
+              <input type="range" id="brightness" min="-80" max="80" value="0"
+                oninput="document.getElementById('bVal').textContent=this.value; scheduleRT()">
+              <span class="ctrl-val" id="bVal">0</span>
+            </div>
+
+            <div class="ctrl-row">
+              <span class="ctrl-label">コントラスト</span>
+              <input type="range" id="contrast" min="-80" max="80" value="0"
+                oninput="document.getElementById('cVal').textContent=this.value; scheduleRT()">
+              <span class="ctrl-val" id="cVal">0</span>
+            </div>
+
+            <div class="ctrl-row">
+              <span class="ctrl-label">彩度補正</span>
+              <input type="range" id="saturation" min="-100" max="100" value="0"
+                oninput="document.getElementById('sVal').textContent=this.value; scheduleRT()">
+              <span class="ctrl-val" id="sVal">0</span>
+            </div>
+
+            <div class="tone-row-label" style="margin-top:6px">🎨 レンダリングモード</div>
+            <select id="renderMode" onchange="onRenderModeChange()">
+              <option value="tone" selected>トーンパターン（うごメモ風）</option>
+              <option value="blend">混色モード（中間色をそのまま塗る）</option>
+            </select>
+
+            <!-- トーンモード専用オプション -->
+            <div id="toneOptions">
+              <div class="tone-row-label" style="margin-top:6px">トーンパターン</div>
+              <select id="patternMode" onchange="scheduleRT()">
+                <option value="flipnote" selected>チェッカー（密度連続変化）</option>
+                <option value="fixed">うごメモ固定パターン</option>
+                <option value="cross">＋クロス</option>
+                <option value="dot">丸ドット</option>
+              </select>
+              <div class="tone-row-label">トーンステップ数</div>
+              <select id="toneSteps" onchange="scheduleRT()">
+                <option value="16" selected>16段階</option>
+                <option value="8">8段階</option>
+                <option value="4">4段階</option>
+              </select>
+            </div>
+
+            <!-- 混色モード専用オプション -->
+            <div id="blendOptions" style="display:none">
+              <div class="tone-row-label" style="margin-top:6px">混色ステップ数</div>
+              <select id="blendSteps" onchange="scheduleRT()">
+                <option value="2">2段階（パレット原色のみ）</option>
+                <option value="4">4段階</option>
+                <option value="8" selected>8段階</option>
+                <option value="16">16段階</option>
+                <option value="32">32段階（なめらか）</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 実行 -->
+        <button class="btn-go" id="convertBtn" onclick="convert()" disabled>▶ 変換する</button>
+        <button class="btn-dl" id="dlBtn" onclick="download()" disabled>🖼 画像を保存する</button>
+      </div>
+
+      <!-- キャンバスエリア -->
+      <div class="canvas-area">
+        <div class="info-bar" id="infoBar">
+          <div class="info-item"><span>サイズ: </span><strong id="iSize">--</strong></div>
+          <div class="info-item"><span>パレット: </span><strong id="iColors">--</strong></div>
+          <div class="info-item"><span>ドットサイズ: </span><strong id="iDot">--</strong></div>
+          <div class="info-item"><span>ステップ: </span><strong id="iSteps">--</strong></div>
+        </div>
+
+        <div class="canvas-compare">
+          <div class="canvas-box">
+            <div class="canvas-box-title">◆ 元画像</div>
+            <div class="canvas-holder" id="origHolder">
+              <div class="placeholder"><span class="big">📁</span>画像を選んでください</div>
+              <canvas id="origCanvas" style="display:none"></canvas>
+            </div>
+          </div>
+
+          <div class="canvas-box">
+            <div class="canvas-box-title">◆ 変換後</div>
+            <div class="canvas-holder" id="outHolder">
+              <div class="placeholder"><span class="big">🎨</span>変換ボタンを押してください</div>
+              <canvas id="outCanvas" style="display:none"></canvas>
+              <div class="loading" id="loading">
+                <span class="loading-text">変換中...</span>
+              </div>
+              <div class="rt-badge" id="rtBadge">更新中</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- トーンカラー表 -->
+        <div id="tonePreviewPanel" style="display:none">
+          <div class="canvas-box-title">◆ 使用トーン一覧（色 × 密度の組み合わせ）</div>
+          <div class="tone-preview-inner" id="tonePreviewInner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<canvas id="workCanvas" style="display:none"></canvas>
+
+<script>
+// =============================================
+//  うごメモ風トーンパターンディザリング
+//  アルゴリズム解説：
+//  1. 入力画像の各ピクセルをブロック単位でサンプリング
+//  2. ブロック色に対して「最も近い2色」を選ぶ
+//  3. その2色の混合比率をBayerマトリクスで決定
+//  4. ブロック内のドットを fg/bg 色で塗り分ける
+// =============================================
+
+// ===== パレットプリセット =====
+const PRESETS = {
+  flipnote: ['#000000','#ff1010','#0039ce','#008431','#ffe700','#ffffff'],
+  primary:  ['#000000','#ff0000','#00cc00','#0000ff','#ffff00','#ff00ff','#00ffff','#ffffff'],
+  gameboy:  ['#0f380f','#306230','#8bac0f','#9bbc0f'],
+  mono:     ['#000000','#ffffff']
+};
+
+// ===== 状態 =====
+let palette = [...PRESETS.flipnote];
+let sourceImg = null;
+let sourceFileName = 'image'; // 読み込んだファイル名（拡張子なし）を保持
+
+// ===== レンダリングモード切り替え =====
+function onRenderModeChange() {
+  const mode = document.getElementById('renderMode').value;
+  document.getElementById('toneOptions').style.display  = mode === 'tone'  ? '' : 'none';
+  document.getElementById('blendOptions').style.display = mode === 'blend' ? '' : 'none';
+  scheduleRT();
+}
+
+// ===== デバウンスタイマー =====
+let rtTimer = null;
+
+// スライダー変更時にリアルタイム変換をスケジュール
+function scheduleRT() {
+  if (!sourceImg) return;
+  clearTimeout(rtTimer);
+  document.getElementById('rtBadge').classList.add('show');
+  rtTimer = setTimeout(() => requestAnimationFrame(() => {
+    _convert();
+    document.getElementById('rtBadge').classList.remove('show');
+  }), 200);
+}
+
+// ===== パレット描画 =====
+// 各チップをクリック→その色のカラーピッカーを開く
+let editingIndex = -1; // 編集中のパレットインデックス
+
+function renderPalette() {
+  const row = document.getElementById('paletteRow');
+  row.innerHTML = '';
+  palette.forEach((hex, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'color-chip';
+    chip.style.background = hex;
+    chip.title = hex + '（クリックで変更）';
+
+    // ×ボタン（削除）
+    const xBtn = document.createElement('div');
+    xBtn.className = 'x-btn';
+    xBtn.textContent = '×';
+    xBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // チップのクリックに伝播させない
+      if (palette.length > 2) {
+        palette.splice(i, 1);
+        renderPalette();
+        scheduleRT();
+      }
+    });
+    chip.appendChild(xBtn);
+
+    // チップ本体クリック → カラーピッカーで色変更
+    chip.addEventListener('click', () => {
+      editingIndex = i;
+      const picker = document.getElementById('colorPicker');
+      picker.value = hex;
+      picker.click();
+    });
+
+    row.appendChild(chip);
+  });
+  document.getElementById('iColors').textContent = palette.length + '色';
+}
+
+function setPreset(name) {
+  palette = [...PRESETS[name]];
+  renderPalette();
+  scheduleRT();
+}
+
+function openPicker() {
+  editingIndex = -1; // 追加モード
+  document.getElementById('colorPicker').value = '#000000';
+  document.getElementById('colorPicker').click();
+}
+
+document.getElementById('colorPicker').addEventListener('change', e => {
+  if (editingIndex >= 0) {
+    // 既存の色を編集
+    palette[editingIndex] = e.target.value;
+    editingIndex = -1;
+  } else {
+    // 新色を追加
+    palette.push(e.target.value);
+  }
+  renderPalette();
+  scheduleRT();
+});
+
+// ===== ファイル読み込み =====
+// ===== ファイル読み込み（iPhone対応） =====
+const fileInput = document.getElementById('fileInput');
+
+// labelタップ→input changeで発火
+fileInput.addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (f) loadFile(f);
+  // iPhoneで同じファイルを再選択できるようにリセット
+  fileInput.value = '';
+});
+
+// PCのドラッグ&ドロップ対応
+const uz = document.getElementById('uploadZone');
+uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('drag-over'); });
+uz.addEventListener('dragleave', () => uz.classList.remove('drag-over'));
+uz.addEventListener('drop', e => {
+  e.preventDefault(); uz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadFile(f);
+});
+
+function loadFile(file) {
+  // 拡張子を除いたファイル名を保存
+  sourceFileName = file.name.replace(/\.[^/.]+$/, '');
+  let objectUrl = null;
+  try {
+    objectUrl = URL.createObjectURL(file);
+  } catch(e) { /* 非対応なら fallback */ }
+
+  if (objectUrl) {
+    const img = new Image();
+    img.onload = () => {
+      applyImage(img);
+      // canvasに描画し終わったら解放
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      // objectURLで失敗したらFileReaderで再試行
+      loadFileViaReader(file);
+    };
+    img.src = objectUrl;
+  } else {
+    loadFileViaReader(file);
+  }
+}
+
+// FileReader fallback（Base64経由）
+function loadFileViaReader(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => applyImage(img);
+    img.onerror = () => alert('画像の読み込みに失敗しました。');
+    img.src = e.target.result;
+  };
+  reader.onerror = () => alert('ファイルの読み込みに失敗しました。');
+  reader.readAsDataURL(file);
+}
+
+// 画像をcanvasに反映する共通処理
+function applyImage(img) {
+  sourceImg = img;
+  const c = document.getElementById('origCanvas');
+  c.width = img.width;
+  c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  document.getElementById('origHolder').querySelector('.placeholder').style.display = 'none';
+  c.style.display = 'block';
+  document.getElementById('iSize').textContent = img.width + '×' + img.height;
+  document.getElementById('convertBtn').disabled = false;
+}
+
+// ===== RGB ユーティリティ =====
+function hexToRgb(hex) {
+  return {
+    r: parseInt(hex.slice(1,3),16),
+    g: parseInt(hex.slice(3,5),16),
+    b: parseInt(hex.slice(5,7),16)
+  };
+}
+
+// 色距離（知覚的重み付き）
+function dist(r1,g1,b1, r2,g2,b2) {
+  const dr=r1-r2, dg=g1-g2, db=b1-b2;
+  return 0.2126*dr*dr + 0.7152*dg*dg + 0.0722*db*db;
+}
+
+// ===== 最近傍1色を返す =====
+function nearestColor(r, g, b, parsed) {
+  let best = parsed[0], bestDist = Infinity;
+  for (const c of parsed) {
+    const d = dist(r, g, b, c.r, c.g, c.b);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  return best;
+}
+
+// steps引数を追加してDOM参照を排除
+function findBestPair(r, g, b, parsed, steps) {
+  let bestSingle = parsed[0], bestSingleDist = Infinity;
+  for (const c of parsed) {
+    const d = dist(r,g,b, c.r,c.g,c.b);
+    if (d < bestSingleDist) { bestSingleDist = d; bestSingle = c; }
+  }
+
+  let bestC1 = bestSingle, bestC2 = bestSingle, bestRatio = 1.0, bestErr = bestSingleDist;
+
+  for (let i = 0; i < parsed.length; i++) {
+    for (let j = i; j < parsed.length; j++) {
+      const ca = parsed[i], cb = parsed[j];
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const mr = ca.r*(1-t) + cb.r*t;
+        const mg = ca.g*(1-t) + cb.g*t;
+        const mb = ca.b*(1-t) + cb.b*t;
+        const err = dist(r,g,b, mr,mg,mb);
+        if (err < bestErr) {
+          bestErr = err;
+          bestC1 = ca; bestC2 = cb;
+          bestRatio = 1 - t;
+        }
+      }
+    }
+  }
+  return { c1: bestC1, c2: bestC2, ratio: bestRatio };
+}
+
+// ===== Bayerマトリクス（グローバル定数） =====
+const BAYER4 = [
+  [ 0, 8, 2,10],
+  [12, 4,14, 6],
+  [ 3,11, 1, 9],
+  [15, 7,13, 5]
+];
+
+// ===== うごメモ固定パターン（12×12タイルで統一） =====
+// 3×3と4×4の最小公倍数=12で全パターンを展開しシームレスを保証
+function expandTile(small) {
+  const sh = small.length, sw = small[0].length;
+  const big = [];
+  for (let y = 0; y < 12; y++) {
+    const row = [];
+    for (let x = 0; x < 12; x++) row.push(small[y % sh][x % sw]);
+    big.push(row);
+  }
+  return big;
+}
+
+const FIXED_TONES = [
+  expandTile([[0,0,0],[0,0,0],[0,0,0]]),           // 0: 空
+  expandTile([[1,0,0],[0,0,0],[0,0,0]]),            // 1: スパースドット
+  expandTile([[1,0,1,0],[0,0,0,0],[1,0,1,0],[0,0,0,0]]), // 2: クロス
+  expandTile([[1,0,1,0],[0,1,0,1],[1,0,1,0],[0,1,0,1]]), // 3: 市松
+  expandTile([[0,1,0,1],[1,1,1,1],[0,1,0,1],[1,1,1,1]]), // 4: 密チェッカー
+  expandTile([[0,1,1],[1,1,1],[1,1,1]]),            // 5: ほぼ塗りつぶし
+  expandTile([[1,1,1],[1,1,1],[1,1,1]]),            // 6: 完全塗りつぶし
+];
+
+// ===== ドットパターン判定 =====
+function getPatternPixel(px, py, dotSize, density, patternMode) {
+
+  if (patternMode === 'flipnote') {
+    // Bayer4×4で密度連続変化（チェッカー）
+    const threshold = (BAYER4[py % 4][px % 4] + 0.5) / 16;
+    return density > threshold;
+  }
+
+  if (patternMode === 'fixed') {
+    // うごメモ固定パターン：densityを0〜6にマップして切り替え
+    const idx = Math.min(FIXED_TONES.length - 1, Math.round(density * (FIXED_TONES.length - 1)));
+    return FIXED_TONES[idx][py % 12][px % 12] === 1;
+  }
+
+  if (patternMode === 'cross') {
+    const localX = px % dotSize;
+    const localY = py % dotSize;
+    const mid = Math.floor(dotSize / 2);
+    const thick = Math.max(1, Math.round(density * (dotSize / 2)));
+    return Math.abs(localX - mid) < thick || Math.abs(localY - mid) < thick;
+  }
+
+  if (patternMode === 'dot') {
+    const localX = px % dotSize;
+    const localY = py % dotSize;
+    const cx = (dotSize - 1) / 2;
+    const cy = (dotSize - 1) / 2;
+    const r = Math.sqrt((localX - cx) ** 2 + (localY - cy) ** 2);
+    return r < (dotSize / 2) * density;
+  }
+
+  return density > 0.5;
+}
+
+// ===== メイン変換 =====
+function convert() {
+  if (!sourceImg) return;
+  document.getElementById('loading').classList.add('on');
+  document.getElementById('convertBtn').disabled = true;
+
+  setTimeout(() => {
+    try { _convert(); }
+    finally {
+      document.getElementById('loading').classList.remove('on');
+      document.getElementById('convertBtn').disabled = false;
+    }
+  }, 30);
+}
+
+function _convert() {
+  const dotSize       = parseInt(document.getElementById('dotSize').value);
+  const brightnessAdj = parseInt(document.getElementById('brightness').value);
+  const contrastAdj   = parseInt(document.getElementById('contrast').value);
+  const saturationAdj = parseInt(document.getElementById('saturation').value);
+  const renderMode    = document.getElementById('renderMode').value;
+  const patternMode   = document.getElementById('patternMode').value;
+  const steps         = parseInt(document.getElementById('toneSteps').value);
+  const blendSteps    = parseInt(document.getElementById('blendSteps').value);
+
+  const parsed = palette.map(hexToRgb).map((c,i) => ({ ...c, hex: palette[i] }));
+
+  const W = sourceImg.width, H = sourceImg.height;
+
+  // 作業用キャンバス（getImageDataは1回だけ）
+  const work = document.getElementById('workCanvas');
+  work.width = W; work.height = H;
+  const wctx = work.getContext('2d');
+  wctx.drawImage(sourceImg, 0, 0);
+  const imgData = wctx.getImageData(0, 0, W, H);
+  const px = imgData.data;
+
+  // 明度・コントラスト・彩度補正を1パスで処理（getImageData重複を排除）
+  const hasBrCo = brightnessAdj !== 0 || contrastAdj !== 0;
+  const hasSat  = saturationAdj !== 0;
+  if (hasBrCo || hasSat) {
+    const factor = hasBrCo ? (259*(contrastAdj+255))/(255*(259-contrastAdj)) : 1;
+    const sf = hasSat ? 1 + saturationAdj/100 : 1;
+    for (let i = 0; i < px.length; i += 4) {
+      let r = px[i], g = px[i+1], b = px[i+2];
+      if (hasBrCo) {
+        r = Math.max(0,Math.min(255, factor*(r+brightnessAdj-128)+128));
+        g = Math.max(0,Math.min(255, factor*(g+brightnessAdj-128)+128));
+        b = Math.max(0,Math.min(255, factor*(b+brightnessAdj-128)+128));
+      }
+      if (hasSat) {
+        const gray = 0.2126*r + 0.7152*g + 0.0722*b;
+        r = Math.max(0,Math.min(255, gray+(r-gray)*sf));
+        g = Math.max(0,Math.min(255, gray+(g-gray)*sf));
+        b = Math.max(0,Math.min(255, gray+(b-gray)*sf));
+      }
+      px[i]=r; px[i+1]=g; px[i+2]=b;
+    }
+  }
+  const srcData = px; // putImageData不要・直接使用
+
+  // 出力キャンバス
+  const out = document.getElementById('outCanvas');
+  out.width = W; out.height = H;
+  const octx = out.getContext('2d');
+  const outImgData = octx.createImageData(W, H);
+  const outData = outImgData.data;
+
+  // =====================================================
+  // renderMode === 'tone'  : 1px単位でトーンパターン配置
+  // renderMode === 'blend' : dotSizeブロック単位で中間色を計算→
+  //                          ブロック全体を同じ色で塗る（パキッとした見た目）
+  // =====================================================
+  if (renderMode === 'blend') {
+    // ブロック単位処理：隣ピクセルと色が変わらないのでアンチエイリアスなし
+    const bW = Math.ceil(W / dotSize);
+    const bH = Math.ceil(H / dotSize);
+    for (let by = 0; by < bH; by++) {
+      for (let bx = 0; bx < bW; bx++) {
+        // ブロック平均色
+        let sr=0, sg=0, sb=0, cnt=0;
+        for (let dy = 0; dy < dotSize; dy++) {
+          for (let dx = 0; dx < dotSize; dx++) {
+            const px2 = bx*dotSize+dx, py2 = by*dotSize+dy;
+            if (px2 < W && py2 < H) {
+              const i = (py2*W+px2)*4;
+              sr+=srcData[i]; sg+=srcData[i+1]; sb+=srcData[i+2]; cnt++;
+            }
+          }
+        }
+        sr/=cnt; sg/=cnt; sb/=cnt;
+
+        // 最適2色と混合比 → blendSteps段階に丸めて中間色を計算
+        const { c1, c2, ratio } = findBestPair(sr, sg, sb, parsed, steps);
+        let t = 1 - ratio;
+        t = Math.round(t * blendSteps) / blendSteps;
+        const col = {
+          r: Math.round(c1.r*(1-t) + c2.r*t),
+          g: Math.round(c1.g*(1-t) + c2.g*t),
+          b: Math.round(c1.b*(1-t) + c2.b*t),
+        };
+
+        // ブロック全体を同じ色で塗る → パキッとした色分け
+        for (let dy = 0; dy < dotSize; dy++) {
+          for (let dx = 0; dx < dotSize; dx++) {
+            const px2 = bx*dotSize+dx, py2 = by*dotSize+dy;
+            if (px2 >= W || py2 >= H) continue;
+            const oi = (py2*W+px2)*4;
+            outData[oi]   = col.r;
+            outData[oi+1] = col.g;
+            outData[oi+2] = col.b;
+            outData[oi+3] = 255;
+          }
+        }
+      }
+    }
+  } else {
+    // トーンモード：1ピクセル単位でBayer/パターン判定
+    for (let py = 0; py < H; py++) {
+      for (let px = 0; px < W; px++) {
+        const idx = (py * W + px) * 4;
+        const r = srcData[idx];
+        const g = srcData[idx + 1];
+        const b = srcData[idx + 2];
+
+        const { c1, c2, ratio } = findBestPair(r, g, b, parsed, steps);
+        const snappedRatio = Math.round(ratio * steps) / steps;
+        const useC1 = getPatternPixel(px, py, dotSize, snappedRatio, patternMode);
+        const col = useC1 ? c1 : c2;
+
+        const oi = idx;
+        outData[oi]     = col.r;
+        outData[oi + 1] = col.g;
+        outData[oi + 2] = col.b;
+        outData[oi + 3] = 255;
+      }
+    }
+  }
+
+  octx.putImageData(outImgData, 0, 0);
+
+  document.getElementById('outHolder').querySelector('.placeholder').style.display = 'none';
+  out.style.display = 'block';
+  document.getElementById('dlBtn').disabled = false;
+
+  // 情報更新
+  document.getElementById('iDot').textContent = dotSize + 'px';
+  document.getElementById('iSteps').textContent = steps + '段階';
+
+  // トーン表更新
+  buildToneTable(parsed, steps, dotSize, patternMode);
+  document.getElementById('tonePreviewPanel').style.display = 'block';
+}
+
+// ===== トーン表を作る =====
+function buildToneTable(parsed, steps, dotSize, patternMode) {
+  const inner = document.getElementById('tonePreviewInner');
+  inner.innerHTML = '';
+
+  const cellPx = 24; // 表示サイズ
+
+  parsed.forEach(c1 => {
+    parsed.forEach(c2 => {
+      if (c1.hex >= c2.hex) return; // 重複スキップ
+
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px;';
+
+      const labelEl = document.createElement('div');
+      labelEl.style.cssText = `display:flex;align-items:center;gap:4px;min-width:60px;font-size:9px;`;
+      const s1 = document.createElement('div');
+      s1.style.cssText = `width:12px;height:12px;background:${c1.hex};border:1px solid #555;border-radius:2px;flex-shrink:0`;
+      const s2 = document.createElement('div');
+      s2.style.cssText = `width:12px;height:12px;background:${c2.hex};border:1px solid #555;border-radius:2px;flex-shrink:0`;
+      labelEl.appendChild(s1);
+      labelEl.appendChild(s2);
+      row.appendChild(labelEl);
+
+      const tilesRow = document.createElement('div');
+      tilesRow.style.cssText = 'display:flex;gap:3px;';
+
+      for (let s = 0; s <= steps; s++) {
+        const ratio = s / steps;
+        const tc = document.createElement('canvas');
+        tc.width = dotSize * 3; tc.height = dotSize * 3;
+        tc.style.cssText = `width:${cellPx}px;height:${cellPx}px;image-rendering:pixelated;border:1px solid #ccc;border-radius:2px;`;
+
+        const ctx = tc.getContext('2d');
+        for (let dy = 0; dy < dotSize * 3; dy++) {
+          for (let dx = 0; dx < dotSize * 3; dx++) {
+            // 絶対座標のままgetPatternPixelに渡す（シームレス確認用）
+            const useC1 = getPatternPixel(dx, dy, dotSize, ratio, patternMode);
+            ctx.fillStyle = useC1 ? c1.hex : c2.hex;
+            ctx.fillRect(dx, dy, 1, 1);
+          }
+        }
+        tilesRow.appendChild(tc);
+      }
+      row.appendChild(tilesRow);
+      inner.appendChild(row);
+    });
+  });
+
+  if (inner.children.length === 0) {
+    inner.textContent = '（パレットが2色以上の時に表示されます）';
+  }
+}
+
+function showToneInfo() {
+  document.getElementById('tonePreviewPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ===== 保存：PC→直接DL、iPhone→長押しモーダル =====
+function download() {
+  const c = document.getElementById('outCanvas');
+  const fname = sourceFileName + '_flipnote.png';
+
+  // 大きい画像はクラッシュ防止で縮小
+  const MAX = 1200;
+  let w = c.width, h = c.height;
+  if (w > MAX || h > MAX) {
+    const scale = Math.min(MAX / w, MAX / h);
+    w = Math.floor(w * scale);
+    h = Math.floor(h * scale);
+  }
+
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const tctx = tmp.getContext('2d');
+  tctx.imageSmoothingEnabled = false;
+  tctx.drawImage(c, 0, 0, w, h);
+
+  saveCanvasAsPng(tmp, fname);
+}
+
+// 保存共通：ネイティブアプリ(iOS/macOS WKWebView)→ダイアログ、iOS Safari→長押しモーダル、PC→直接DL
+function saveCanvasAsPng(canvas, filename) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  try {
+    canvas.toBlob(blob => {
+      if (!blob) { alert('保存エラー: Blob生成失敗'); return; }
+      const useNativeSave = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveImage);
+      if (useNativeSave) {
+        // ネイティブアプリ（iOS/macOS）→ ダイアログで保存
+        const reader = new FileReader();
+        reader.onload = ev => {
+          window.webkit.messageHandlers.saveImage.postMessage({ filename, dataURL: ev.target.result });
+        };
+        reader.readAsDataURL(blob);
+        return;
+      }
+      if (isIOS) {
+        // iOS Safari → 長押しモーダル
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const dataUrl = ev.target.result;
+          const old = document.getElementById('saveModal');
+          if (old) old.remove();
+          const modal = document.createElement('div');
+          modal.id = 'saveModal';
+          modal.style.cssText = [
+            'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999',
+            'display:flex;flex-direction:column;align-items:center;justify-content:center',
+            'gap:14px;padding:20px;box-sizing:border-box'
+          ].join(';');
+          modal.innerHTML = `
+            <div style="color:#9ef;font-family:monospace;font-size:13px;text-align:center;line-height:1.8;">📱 画像を長押し →「写真に追加」で保存</div>
+            <img src="${dataUrl}"
+              style="max-width:88vw;max-height:65vh;image-rendering:pixelated;
+                     border:3px solid #555;border-radius:4px;display:block;
+                     -webkit-touch-callout:default;">
+            <button onclick="document.getElementById('saveModal').remove()"
+              style="padding:10px 28px;background:#333;color:white;border:1px solid #666;
+                     border-radius:6px;cursor:pointer;font-family:monospace;font-size:13px;">
+              ✕ 閉じる
+            </button>
+            <div style="color:#888;font-family:monospace;font-size:11px;">${filename}</div>
+          `;
+          modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+          document.body.appendChild(modal);
+        };
+        reader.readAsDataURL(blob);
+      } else {
+        // PC・Android → 直接DL
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+      }
+    }, 'image/png');
+  } catch(e) { alert('保存エラー: ' + e.message); }
+}
+
+// ===== 初期化 =====
+renderPalette();
+
+// ===== ライトボックス（変換後canvasクリックで拡大表示・ズームパン対応） =====
+(function() {
+  const CANVAS_ID = 'outCanvas';
+  let lb = null;
+  let lbImg = null;
+  let lbZoomLabel = null;
+  let lbState = { zoom: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
+  let prevTouches = [];
+
+  function mkBtn(label, color) {
+    const b = document.createElement('button');
+    const c = color || '#7a7a90';
+    b.textContent = label;
+    b.style.cssText = `padding:8px 16px;background:rgba(0,0,0,.5);border:1px solid ${c};color:${c};font-family:'Courier New',monospace;font-size:13px;border-radius:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;min-width:44px;min-height:44px;`;
+    return b;
+  }
+
+  function buildLightbox() {
+    if (lb) return;
+    lb = document.createElement('div');
+    lb.id = 'lb-overlay';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;';
+
+    // ツールバー（DOM APIで作成→イベント干渉なし）
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.7);z-index:2;';
+
+    lbZoomLabel = document.createElement('span');
+    lbZoomLabel.style.cssText = "font-family:'Courier New',monospace;font-size:11px;color:#888;";
+    lbZoomLabel.textContent = 'ZOOM: 100%';
+
+    const btnIn    = mkBtn('＋');
+    const btnOut   = mkBtn('－');
+    const btnFit   = mkBtn('FIT');
+    const spacer   = document.createElement('span');
+    spacer.style.flex = '1';
+    const btnClose = mkBtn('✕ 閉じる', '#ff5a5a');
+
+    btnIn.addEventListener('click',    e => { e.stopPropagation(); lbZoom(lbState.zoom * 1.3); });
+    btnOut.addEventListener('click',   e => { e.stopPropagation(); lbZoom(lbState.zoom / 1.3); });
+    btnFit.addEventListener('click',   e => { e.stopPropagation(); fitLb(); });
+    btnClose.addEventListener('click', e => { e.stopPropagation(); closeLb(); });
+    // タッチでも確実に反応させる
+    btnClose.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); closeLb(); });
+
+    bar.append(lbZoomLabel, btnIn, btnOut, btnFit, spacer, btnClose);
+    lb.appendChild(bar);
+
+    lbImg = document.createElement('canvas');
+    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;transform-origin:0 0;';
+    lb.appendChild(lbImg);
+
+    // 背景クリックで閉じる
+    lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
+
+    // ホイールズーム
+    lb.addEventListener('wheel', e => {
+      e.preventDefault();
+      const r = lb.getBoundingClientRect();
+      lbZoomAt(lbState.zoom * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+
+    // マウスドラッグ（ボタン以外）
+    lb.addEventListener('mousedown', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      lbState.dragging = true;
+      lbState.sx = e.clientX; lbState.sy = e.clientY;
+      lbState.spx = lbState.panX; lbState.spy = lbState.panY;
+      lbImg.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!lbState.dragging) return;
+      lbState.panX = lbState.spx + (e.clientX - lbState.sx);
+      lbState.panY = lbState.spy + (e.clientY - lbState.sy);
+      applyLbTransform();
+    });
+    document.addEventListener('mouseup', () => {
+      lbState.dragging = false;
+      if (lbImg) lbImg.style.cursor = 'grab';
+    });
+
+    // タッチ操作（ボタン以外でのみパン/ピンチ）
+    lb.addEventListener('touchstart', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      e.preventDefault();
+      prevTouches = Array.from(e.touches);
+      if (prevTouches.length === 1) {
+        lbState.dragging = true;
+        lbState.sx = prevTouches[0].clientX; lbState.sy = prevTouches[0].clientY;
+        lbState.spx = lbState.panX; lbState.spy = lbState.panY;
+      } else {
+        lbState.dragging = false;
+      }
+    }, { passive: false });
+
+    lb.addEventListener('touchmove', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      e.preventDefault();
+      const t = Array.from(e.touches);
+      if (t.length === 1 && lbState.dragging) {
+        lbState.panX = lbState.spx + (t[0].clientX - lbState.sx);
+        lbState.panY = lbState.spy + (t[0].clientY - lbState.sy);
+        applyLbTransform();
+      } else if (t.length === 2 && prevTouches.length === 2) {
+        const prevD = Math.hypot(prevTouches[0].clientX - prevTouches[1].clientX, prevTouches[0].clientY - prevTouches[1].clientY);
+        const newD  = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        const r = lb.getBoundingClientRect();
+        const mx = (t[0].clientX + t[1].clientX) / 2 - r.left;
+        const my = (t[0].clientY + t[1].clientY) / 2 - r.top;
+        if (prevD > 0) lbZoomAt(lbState.zoom * (newD / prevD), mx, my);
+        prevTouches = t;
+      }
+    }, { passive: false });
+
+    lb.addEventListener('touchend', e => {
+      if (e.touches.length === 0) lbState.dragging = false;
+      prevTouches = Array.from(e.touches);
+    });
+
+    document.body.appendChild(lb);
+  }
+
+  function openLb(srcCanvas) {
+    buildLightbox();
+    lbImg.width  = srcCanvas.width;
+    lbImg.height = srcCanvas.height;
+    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
+    lb.style.display = 'block';
+    fitLb();
+  }
+
+  function closeLb() {
+    if (lb) lb.style.display = 'none';
+    lbState.dragging = false;
+  }
+
+  function fitLb() {
+    const pw = lb.clientWidth, ph = lb.clientHeight - 56;
+    const z = Math.min(1, (pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
+    lbState.panX = (pw - lbImg.width  * z) / 2;
+    lbState.panY = (ph - lbImg.height * z) / 2 + 56;
+    lbZoom(z);
+  }
+
+  function lbZoom(z) {
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    applyLbTransform();
+    if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
+  }
+
+  function lbZoomAt(z, ox, oy) {
+    const old = lbState.zoom;
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
+    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
+    applyLbTransform();
+    if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
+  }
+
+  function applyLbTransform() {
+    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
+  }
+
+  function attachLbTrigger(holderId) {
+    const holder = document.getElementById(holderId);
+    if (!holder) return;
+    const hint = document.createElement('div');
+    hint.style.cssText = 'position:absolute;bottom:6px;right:8px;font-size:10px;color:rgba(255,255,255,.35);font-family:monospace;pointer-events:none;letter-spacing:.05em;z-index:1;';
+    hint.textContent = '🔍 タップで拡大';
+    holder.style.position = 'relative';
+    holder.appendChild(hint);
+    holder.addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      const c = document.getElementById(CANVAS_ID);
+      if (!c || c.style.display === 'none') return;
+      openLb(c);
+    });
+  }
+
+  attachLbTrigger('outHolder');
+})();
+</script>
+</body>
+</html>

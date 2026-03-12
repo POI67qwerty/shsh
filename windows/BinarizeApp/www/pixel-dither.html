@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIXEL DITHER MAKER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --bg:      #0a0a0f;
+    --panel:   #12121a;
+    --border:  #2a2a3a;
+    --accent:  #ff3c5a;
+    --accent2: #00f5c4;
+    --accent3: #ffe000;
+    --text:    #e0e0f0;
+    --dim:     #555570;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  html { background: #0a0a0f; } /* iPhoneSafari対策：htmlにも背景指定 */
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ドット背景 */
+  body::before {
+    content:''; position:fixed; inset:0;
+    background-image: radial-gradient(circle,#1a1a2e 1px,transparent 1px);
+    background-size:24px 24px; pointer-events:none; z-index:0; opacity:.5;
+  }
+
+  .app { position:relative; z-index:1; max-width:1300px; margin:0 auto; padding:20px; }
+
+  /* ヘッダー */
+  header { text-align:center; padding:30px 0 24px; border-bottom:2px solid var(--border); margin-bottom:24px; position:relative; }
+  header::after { content:''; position:absolute; bottom:-2px; left:50%; transform:translateX(-50%); width:200px; height:2px; background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent); }
+  h1 { font-family:'Press Start 2P',monospace; font-size:clamp(14px,3vw,22px); color:var(--accent); text-shadow:0 0 20px rgba(255,60,90,.6),3px 3px 0 #7a001a; letter-spacing:2px; line-height:1.6; }
+  h1 span { color:var(--accent2); text-shadow:0 0 20px rgba(0,245,196,.6),3px 3px 0 #005a45; }
+  .subtitle { font-size:11px; color:var(--dim); margin-top:10px; letter-spacing:3px; }
+
+  /* メインレイアウト */
+  .main-layout { display:grid; grid-template-columns:320px 1fr; gap:20px; align-items:start; }
+  @media (max-width:900px) { .main-layout { grid-template-columns:1fr; } }
+
+  /* パネル */
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+  .panel-title { font-family:'Press Start 2P',monospace; font-size:9px; color:var(--accent3); padding:10px 14px; background:rgba(255,224,0,.05); border-bottom:1px solid var(--border); letter-spacing:1px; }
+  .panel-body { padding:16px; }
+
+  /* アップロードゾーン（label要素・iPhone対応） */
+  .upload-zone {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    width:100%;
+    border:2px dashed var(--border); border-radius:4px;
+    padding:28px 16px; text-align:center; cursor:pointer;
+    transition:all .2s; background:rgba(255,255,255,.02);
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color:var(--accent2); background:rgba(0,245,196,.05); }
+  .upload-icon { font-size:32px; display:block; margin-bottom:10px; }
+  .upload-text { font-size:11px; color:var(--dim); line-height:1.8; }
+  .upload-text strong { color:var(--accent2); display:block; font-size:12px; margin-bottom:4px; }
+
+  /* 設定 */
+  .setting-group { margin-bottom:18px; }
+  .setting-label { font-size:10px; color:var(--accent3); letter-spacing:2px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+  .setting-value { color:var(--accent2); font-size:12px; }
+
+  /* スライダー */
+  input[type="range"] { width:100%; -webkit-appearance:none; appearance:none; height:4px; background:var(--border); border-radius:2px; outline:none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; background:var(--accent); cursor:pointer; border-radius:2px; border:2px solid var(--bg); box-shadow:0 0 8px rgba(255,60,90,.5); }
+  input[type="range"]:hover::-webkit-slider-thumb { background:var(--accent2); box-shadow:0 0 8px rgba(0,245,196,.5); }
+
+  /* セレクト */
+  select { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; font-family:'Share Tech Mono',monospace; font-size:11px; border-radius:2px; cursor:pointer; outline:none; transition:border-color .2s; }
+  select:hover, select:focus { border-color:var(--accent2); }
+
+  /* パレット */
+  .palette-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; margin-bottom:10px; }
+  .color-swatch { aspect-ratio:1; border-radius:2px; cursor:pointer; border:2px solid transparent; transition:all .15s; position:relative; }
+  .color-swatch:hover { transform:scale(1.15); border-color:var(--text); z-index:2; }
+  .color-swatch .remove-btn { display:none; position:absolute; top:-4px; right:-4px; width:12px; height:12px; background:var(--accent); border-radius:50%; font-size:8px; line-height:12px; text-align:center; color:white; }
+  .color-swatch:hover .remove-btn { display:block; }
+  .palette-actions { display:flex; gap:8px; align-items:center; }
+  .add-color-btn { flex:1; padding:7px; background:rgba(0,245,196,.08); border:1px dashed var(--accent2); color:var(--accent2); font-family:'Share Tech Mono',monospace; font-size:10px; cursor:pointer; border-radius:2px; transition:all .2s; letter-spacing:1px; }
+  .add-color-btn:hover { background:rgba(0,245,196,.15); }
+  .color-picker-hidden { position:fixed; top:-9999px; left:-9999px; opacity:0; width:1px; height:1px; pointer-events:none; }
+
+  /* プリセット */
+  .preset-btns { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .preset-btn { padding:5px 10px; background:rgba(255,255,255,.04); border:1px solid var(--border); color:var(--dim); font-family:'Share Tech Mono',monospace; font-size:9px; cursor:pointer; border-radius:2px; transition:all .15s; letter-spacing:1px; }
+  .preset-btn:hover { border-color:var(--accent3); color:var(--accent3); background:rgba(255,224,0,.05); }
+
+  /* ボタン */
+  .btn-primary { width:100%; padding:12px; background:linear-gradient(135deg,var(--accent),#c0002a); border:none; color:white; font-family:'Press Start 2P',monospace; font-size:9px; cursor:pointer; letter-spacing:2px; border-radius:2px; transition:all .2s; box-shadow:0 4px 15px rgba(255,60,90,.3); }
+  .btn-primary:hover { background:linear-gradient(135deg,#ff5a74,var(--accent)); box-shadow:0 4px 20px rgba(255,60,90,.5); transform:translateY(-1px); }
+  .btn-primary:active { transform:translateY(0); }
+  .btn-primary:disabled { background:var(--border); color:var(--dim); cursor:not-allowed; box-shadow:none; transform:none; }
+  .btn-secondary { width:100%; padding:10px; background:rgba(0,245,196,.08); border:1px solid var(--accent2); color:var(--accent2); font-family:'Share Tech Mono',monospace; font-size:11px; cursor:pointer; letter-spacing:2px; border-radius:2px; transition:all .2s; margin-top:8px; }
+  .btn-secondary:hover { background:rgba(0,245,196,.15); }
+  .btn-secondary:disabled { opacity:.3; cursor:not-allowed; }
+
+  /* プレビュー */
+  .preview-area { display:flex; flex-direction:column; gap:20px; }
+  .canvas-wrapper { position:relative; background:repeating-conic-gradient(#1a1a2e 0% 25%,#12121a 0% 50%) 0 0/20px 20px; border-radius:4px; border:1px solid var(--border); min-height:300px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  canvas { max-width:100%; max-height:500px; image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
+  .placeholder-text { font-family:'Press Start 2P',monospace; font-size:10px; color:var(--dim); text-align:center; line-height:2; }
+  .placeholder-text .big-icon { font-size:48px; display:block; margin-bottom:16px; filter:grayscale(1) opacity(.4); }
+  .compare-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+
+  /* ステータスバー */
+  .status-bar { display:flex; gap:20px; padding:10px 14px; background:rgba(0,0,0,.3); border:1px solid var(--border); border-radius:2px; font-size:10px; color:var(--dim); flex-wrap:wrap; }
+  .status-item { display:flex; gap:6px; align-items:center; }
+  .status-item .val { color:var(--accent2); }
+
+  /* ローディング */
+  .loading-overlay { position:absolute; inset:0; background:rgba(10,10,15,.85); display:none; align-items:center; justify-content:center; z-index:10; }
+  .loading-overlay.active { display:flex; }
+  .loading-text { font-family:'Press Start 2P',monospace; font-size:10px; color:var(--accent2); animation:blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+  /* チェックボックス */
+  .checkbox-group { display:flex; align-items:center; gap:8px; cursor:pointer; font-size:11px; color:var(--dim); user-select:none; }
+  .checkbox-group input { display:none; }
+  .checkbox-custom { width:14px; height:14px; border:1px solid var(--border); background:var(--bg); border-radius:2px; display:inline-flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; }
+  .checkbox-group input:checked + .checkbox-custom { background:var(--accent2); border-color:var(--accent2); }
+  .checkbox-group input:checked + .checkbox-custom::after { content:'✓'; font-size:9px; color:var(--bg); font-weight:bold; }
+
+  .divider { height:1px; background:var(--border); margin:14px 0; }
+
+  /* スクロールバー */
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+  ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ホームに戻るナビ -->
+  <nav style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <a href="index.html" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px 8px 12px;background:var(--bg-panel, #1a1a1f);border:1px solid var(--border, #2e2e3a);border-radius:8px;color:var(--text-dim, #7a7a90);text-decoration:none;font-size:.75rem;font-family:'Courier New',monospace;letter-spacing:.08em;transition:all .15s;-webkit-tap-highlight-color:transparent" onmouseover="this.style.borderColor='#7cffb2';this.style.color='#7cffb2';this.style.boxShadow='0 0 12px #7cffb220'" onmouseout="this.style.borderColor='var(--border, #2e2e3a)';this.style.color='var(--text-dim, #7a7a90)';this.style.boxShadow='none'">
+      <span style="transition:transform .15s">◂</span> HOME
+    </a>
+    <div style="flex:1;height:1px;background:linear-gradient(to right,#2e2e3a,transparent)"></div>
+    <span style="font-size:.62rem;letter-spacing:.2em;color:#7a7a90;text-transform:uppercase">PIXEL DITHER</span>
+  </nav>
+  <header>
+    <h1>PIXEL <span>DITHER</span> MAKER</h1>
+    <p class="subtitle">// ORDERED DITHERING PIXEL ART CONVERTER //</p>
+  </header>
+
+  <div class="main-layout">
+    <div class="controls">
+
+      <!-- 画像アップロード：label方式（iPhone対応） -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">◆ IMAGE INPUT</div>
+        <div class="panel-body">
+          <label for="fileInput" class="upload-zone" id="uploadZone">
+            <span class="upload-icon">🖼</span>
+            <div class="upload-text">
+              <strong>タップ or ドラッグ＆ドロップ</strong>
+              PNG / JPG / GIF / WebP
+            </div>
+          </label>
+          <!-- inputは画面外に配置（iPhone対応） -->
+          <input type="file" id="fileInput" accept="image/*"
+            style="position:fixed;top:-9999px;left:-9999px;opacity:0;width:1px;height:1px;">
+        </div>
+      </div>
+
+      <!-- パレット設定 -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">◆ COLOR PALETTE</div>
+        <div class="panel-body">
+          <div class="setting-label">PRESET</div>
+          <div class="preset-btns">
+            <button class="preset-btn" onclick="applyPreset('primary')">原色8色</button>
+            <button class="preset-btn" onclick="applyPreset('gameboy')">GAME BOY</button>
+            <button class="preset-btn" onclick="applyPreset('cga')">CGA 4色</button>
+            <button class="preset-btn" onclick="applyPreset('ega16')">EGA 16色</button>
+            <button class="preset-btn" onclick="applyPreset('pico8')">PICO-8</button>
+            <button class="preset-btn" onclick="applyPreset('mono')">白黒 2色</button>
+          </div>
+          <div class="setting-label">COLORS</div>
+          <div class="palette-grid" id="paletteGrid"></div>
+          <input type="color" class="color-picker-hidden" id="colorPicker">
+          <div class="palette-actions">
+            <button class="add-color-btn" onclick="openColorPicker()">＋ 色を追加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ディザリング設定 -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">◆ DITHER SETTINGS</div>
+        <div class="panel-body">
+          <div class="setting-group">
+            <div class="setting-label">DITHER METHOD</div>
+            <select id="ditherMethod" onchange="scheduleRT()">
+              <option value="ordered2">Ordered Bayer 2×2</option>
+              <option value="ordered4" selected>Ordered Bayer 4×4</option>
+              <option value="ordered8">Ordered Bayer 8×8</option>
+              <option value="floyd">Floyd-Steinberg</option>
+              <option value="atkinson">Atkinson</option>
+              <option value="none">なし（最近傍色のみ）</option>
+            </select>
+          </div>
+          <div class="setting-group">
+            <div class="setting-label">PIXEL SIZE <span class="setting-value" id="pixelSizeVal">2px</span></div>
+            <input type="range" id="pixelSize" min="1" max="16" value="2"
+              oninput="document.getElementById('pixelSizeVal').textContent=this.value+'px'; scheduleRT()">
+          </div>
+          <div class="setting-group">
+            <div class="setting-label">DITHER STRENGTH <span class="setting-value" id="ditherStrengthVal">100%</span></div>
+            <input type="range" id="ditherStrength" min="0" max="200" value="100"
+              oninput="document.getElementById('ditherStrengthVal').textContent=this.value+'%'; scheduleRT()">
+          </div>
+          <div class="divider"></div>
+          <div class="setting-group">
+            <div class="setting-label">PREPROCESSING</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <label class="checkbox-group">
+                <input type="checkbox" id="autoContrast" checked onchange="scheduleRT()">
+                <span class="checkbox-custom"></span>オートコントラスト
+              </label>
+              <label class="checkbox-group">
+                <input type="checkbox" id="grayscale" onchange="scheduleRT()">
+                <span class="checkbox-custom"></span>グレースケール変換
+              </label>
+            </div>
+          </div>
+          <div class="setting-group">
+            <div class="setting-label">BRIGHTNESS <span class="setting-value" id="brightnessVal">0</span></div>
+            <input type="range" id="brightness" min="-100" max="100" value="0"
+              oninput="document.getElementById('brightnessVal').textContent=this.value; scheduleRT()">
+          </div>
+          <div class="setting-group">
+            <div class="setting-label">CONTRAST <span class="setting-value" id="contrastVal">0</span></div>
+            <input type="range" id="contrast" min="-100" max="100" value="0"
+              oninput="document.getElementById('contrastVal').textContent=this.value; scheduleRT()">
+          </div>
+          <div class="setting-group">
+            <div class="setting-label">SATURATION <span class="setting-value" id="saturationVal">0</span></div>
+            <input type="range" id="saturation" min="-100" max="100" value="0"
+              oninput="document.getElementById('saturationVal').textContent=this.value; scheduleRT()">
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="processBtn" onclick="processImage()" disabled>▶ CONVERT</button>
+      <button class="btn-secondary" id="downloadBtn" onclick="downloadResult()" disabled>↓ DOWNLOAD PNG</button>
+    </div>
+
+    <!-- 右パネル：プレビュー -->
+    <div class="preview-area">
+      <div class="status-bar">
+        <div class="status-item"><span>SIZE:</span><span class="val" id="statSize">--</span></div>
+        <div class="status-item"><span>COLORS:</span><span class="val" id="statColors">--</span></div>
+        <div class="status-item"><span>METHOD:</span><span class="val" id="statMethod">--</span></div>
+        <div class="status-item"><span>PIXELS:</span><span class="val" id="statPixels">--</span></div>
+      </div>
+      <div class="compare-grid">
+        <div class="panel">
+          <div class="panel-title">◆ ORIGINAL</div>
+          <div class="canvas-wrapper" id="originalWrapper">
+            <div class="placeholder-text"><span class="big-icon">📁</span>画像を選択してください</div>
+            <canvas id="originalCanvas" style="display:none"></canvas>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">◆ OUTPUT</div>
+          <div class="canvas-wrapper" id="outputWrapper">
+            <div class="placeholder-text"><span class="big-icon">🎨</span>CONVERT を押してください</div>
+            <canvas id="outputCanvas" style="display:none"></canvas>
+            <div class="loading-overlay" id="loadingOverlay">
+              <span class="loading-text">PROCESSING...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<canvas id="workCanvas" style="display:none"></canvas>
+
+<script>
+// ===== Bayerマトリクス定義 =====
+const BAYER2 = [[0,2],[3,1]];
+const BAYER4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+const BAYER8 = [
+  [0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],
+  [12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],
+  [3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],
+  [15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]
+];
+
+// ===== パレットプリセット =====
+const PRESETS = {
+  primary: ['#ff0000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff','#ffffff','#000000'],
+  gameboy: ['#0f380f','#306230','#8bac0f','#9bbc0f'],
+  cga:     ['#000000','#ff55ff','#55ffff','#ffffff'],
+  ega16:   ['#000000','#0000aa','#00aa00','#00aaaa','#aa0000','#aa00aa','#aa5500','#aaaaaa',
+             '#555555','#5555ff','#55ff55','#55ffff','#ff5555','#ff55ff','#ffff55','#ffffff'],
+  pico8:   ['#000000','#1d2b53','#7e2553','#008751','#ab5236','#5f574f','#c2c3c7','#fff1e8',
+             '#ff004d','#ffa300','#ffec27','#00e436','#29adff','#83769c','#ff77a8','#ffccaa'],
+  mono:    ['#000000','#ffffff']
+};
+
+// ===== 状態管理 =====
+let palette       = [...PRESETS.primary];
+let sourceImage   = null;
+let sourceFileName = 'image'; // 元ファイル名（拡張子なし）
+let editingIndex  = -1;       // パレット編集インデックス（-1=追加モード）
+let parsedPalette = [];
+let rtTimer       = null;
+
+// ===== パレット描画 =====
+function renderPalette() {
+  const grid = document.getElementById('paletteGrid');
+  grid.innerHTML = '';
+  palette.forEach((color, i) => {
+    const sw = document.createElement('div');
+    sw.className = 'color-swatch';
+    sw.style.background = color;
+    sw.title = color + '（クリックで変更）';
+
+    // ×ボタン：クリックで削除
+    const rb = document.createElement('div');
+    rb.className = 'remove-btn';
+    rb.textContent = '×';
+    rb.addEventListener('click', e => {
+      e.stopPropagation();
+      if (palette.length > 1) { palette.splice(i,1); renderPalette(); scheduleRT(); }
+    });
+    sw.appendChild(rb);
+
+    // 色チップクリック：カラーピッカーで変更
+    sw.addEventListener('click', () => {
+      editingIndex = i;
+      const p = document.getElementById('colorPicker');
+      p.value = color; p.click();
+    });
+    grid.appendChild(sw);
+  });
+  document.getElementById('statColors').textContent = palette.length + '色';
+}
+
+function applyPreset(name) { palette = [...PRESETS[name]]; renderPalette(); scheduleRT(); }
+
+// 新規追加ボタン
+function openColorPicker() {
+  editingIndex = -1;
+  const p = document.getElementById('colorPicker');
+  p.value = '#000000'; p.click();
+}
+
+// カラーピッカー確定：編集 or 追加
+document.getElementById('colorPicker').addEventListener('change', e => {
+  if (editingIndex >= 0) { palette[editingIndex] = e.target.value; editingIndex = -1; }
+  else { palette.push(e.target.value); }
+  renderPalette(); scheduleRT();
+});
+
+// ===== ファイル読み込み（iPhone対応） =====
+const fileInput  = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+
+fileInput.addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (f) loadImage(f);
+  fileInput.value = ''; // 同ファイル再選択対応
+});
+uploadZone.addEventListener('dragover',  e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadImage(f);
+});
+
+function loadImage(file) {
+  sourceFileName = file.name.replace(/\.[^/.]+$/, '');
+  let url = null;
+  try { url = URL.createObjectURL(file); } catch(e) {}
+
+  const applyImg = img => {
+    sourceImage = img;
+    const c = document.getElementById('originalCanvas');
+    c.width = img.width; c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    document.getElementById('originalWrapper').querySelector('.placeholder-text').style.display = 'none';
+    c.style.display = 'block';
+    document.getElementById('statSize').textContent = img.width + '×' + img.height;
+    document.getElementById('processBtn').disabled = false;
+    scheduleRT(); // 読み込み直後に即変換
+  };
+
+  if (url) {
+    const img = new Image();
+    img.onload  = () => { applyImg(img); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+    img.onerror = () => { URL.revokeObjectURL(url); loadViaReader(file); };
+    img.src = url;
+  } else { loadViaReader(file); }
+}
+
+// createObjectURLが使えない場合のFallback
+function loadViaReader(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      sourceImage = img;
+      const c = document.getElementById('originalCanvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      document.getElementById('originalWrapper').querySelector('.placeholder-text').style.display = 'none';
+      c.style.display = 'block';
+      document.getElementById('statSize').textContent = img.width + '×' + img.height;
+      document.getElementById('processBtn').disabled = false;
+      scheduleRT();
+    };
+    img.onerror = () => alert('画像の読み込みに失敗しました。');
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ===== リアルタイム変換（300msデバウンス） =====
+function scheduleRT() {
+  if (!sourceImage) return;
+  clearTimeout(rtTimer);
+  rtTimer = setTimeout(() => requestAnimationFrame(() => {
+    try { _doProcess(); } catch(e) { console.error(e); }
+  }), 200);
+}
+
+// ===== 色距離（RGB空間） =====
+function colorDist(r1,g1,b1,r2,g2,b2) {
+  const dr=r1-r2, dg=g1-g2, db=b1-b2;
+  return dr*dr + dg*dg + db*db;
+}
+
+// パレット文字列をRGB数値にパース
+function parsePalette() {
+  parsedPalette = palette.map(hex => ({
+    r: parseInt(hex.slice(1,3),16),
+    g: parseInt(hex.slice(3,5),16),
+    b: parseInt(hex.slice(5,7),16),
+    hex
+  }));
+}
+
+// パレットから最近傍色を返す
+function nearestColor(r,g,b) {
+  let best = parsedPalette[0], bestD = Infinity;
+  for (const c of parsedPalette) {
+    const d = colorDist(r,g,b,c.r,c.g,c.b);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+// ===== CONVERTボタン押下時エントリ =====
+function processImage() {
+  if (!sourceImage) return;
+  document.getElementById('loadingOverlay').classList.add('active');
+  document.getElementById('processBtn').disabled = true;
+  // UIブロック防止のため非同期実行
+  setTimeout(() => {
+    try { _doProcess(); }
+    finally {
+      document.getElementById('loadingOverlay').classList.remove('active');
+      document.getElementById('processBtn').disabled = false;
+    }
+  }, 30);
+}
+
+// ===== メイン画像処理 =====
+function _doProcess() {
+  parsePalette();
+
+  const pixelSize  = parseInt(document.getElementById('pixelSize').value);
+  const method     = document.getElementById('ditherMethod').value;
+  const strength   = parseInt(document.getElementById('ditherStrength').value) / 100;
+  const doGray     = document.getElementById('grayscale').checked;
+  const doAC       = document.getElementById('autoContrast').checked;
+  const brightness = parseInt(document.getElementById('brightness').value);
+  const contrast   = parseInt(document.getElementById('contrast').value);
+  const saturation = parseInt(document.getElementById('saturation').value);
+
+  // 作業用キャンバスに元画像を描画
+  const work = document.getElementById('workCanvas');
+  const W = sourceImage.width, H = sourceImage.height;
+  work.width = W; work.height = H;
+  const wctx = work.getContext('2d');
+  wctx.drawImage(sourceImage, 0, 0);
+
+  const data = wctx.getImageData(0,0,W,H);
+  const px   = data.data;
+
+  // グレースケール変換
+  if (doGray) {
+    for (let i=0; i<px.length; i+=4) {
+      const g = px[i]*.299 + px[i+1]*.587 + px[i+2]*.114;
+      px[i] = px[i+1] = px[i+2] = g;
+    }
+  }
+
+  // 明度・コントラスト補正
+  if (brightness !== 0 || contrast !== 0) {
+    const f = (259*(contrast+255)) / (255*(259-contrast));
+    for (let i=0; i<px.length; i+=4) {
+      for (let c=0; c<3; c++) {
+        let v = px[i+c] + brightness;
+        px[i+c] = Math.max(0, Math.min(255, f*(v-128)+128));
+      }
+    }
+  }
+
+  // 彩度補正（グレー値と元色をfactor倍で補間）
+  if (saturation !== 0) {
+    const sf = 1 + saturation/100;
+    for (let i=0; i<px.length; i+=4) {
+      const g = .2126*px[i] + .7152*px[i+1] + .0722*px[i+2];
+      px[i]   = Math.max(0, Math.min(255, g + (px[i]  -g)*sf));
+      px[i+1] = Math.max(0, Math.min(255, g + (px[i+1]-g)*sf));
+      px[i+2] = Math.max(0, Math.min(255, g + (px[i+2]-g)*sf));
+    }
+  }
+
+  // オートコントラスト
+  if (doAC) {
+    let minV=255, maxV=0;
+    for (let i=0; i<px.length; i+=4)
+      for (let c=0; c<3; c++) { if(px[i+c]<minV) minV=px[i+c]; if(px[i+c]>maxV) maxV=px[i+c]; }
+    const range = maxV - minV || 1;
+    for (let i=0; i<px.length; i+=4)
+      for (let c=0; c<3; c++) px[i+c] = Math.round((px[i+c]-minV)/range*255);
+  }
+
+  wctx.putImageData(data, 0, 0);
+
+  // 出力キャンバス
+  const out = document.getElementById('outputCanvas');
+  out.width = W; out.height = H;
+  const octx = out.getContext('2d');
+  octx.imageSmoothingEnabled = false;
+
+  // ディザリング方式で分岐
+  if (method === 'floyd' || method === 'atkinson') {
+    _errorDiffuse(wctx, octx, W, H, pixelSize, method, strength);
+  } else {
+    _orderedDither(wctx, octx, W, H, pixelSize, method, strength);
+  }
+
+  const pW = Math.ceil(W/pixelSize), pH = Math.ceil(H/pixelSize);
+  document.getElementById('outputWrapper').querySelector('.placeholder-text').style.display = 'none';
+  out.style.display = 'block';
+  document.getElementById('statMethod').textContent = method.toUpperCase();
+  document.getElementById('statPixels').textContent = pW + '×' + pH;
+  document.getElementById('downloadBtn').disabled = false;
+}
+
+// ===== Ordered Dithering（Bayerマトリクス） =====
+// fillRect連発→ImageData直書きで大幅高速化
+function _orderedDither(srcCtx, dstCtx, W, H, pixelSize, method, strength) {
+  let matrix, size;
+  if      (method==='ordered2') { matrix=BAYER2; size=2; }
+  else if (method==='ordered4') { matrix=BAYER4; size=4; }
+  else if (method==='ordered8') { matrix=BAYER8; size=8; }
+  else                          { matrix=null;   size=1; }
+
+  const maxVal  = size * size;
+  const srcData = srcCtx.getImageData(0,0,W,H).data;
+  const outImg  = dstCtx.createImageData(W, H);
+  const outData = outImg.data;
+
+  const bW = Math.ceil(W/pixelSize), bH = Math.ceil(H/pixelSize);
+  for (let by=0; by<bH; by++) {
+    for (let bx=0; bx<bW; bx++) {
+      const cx  = Math.min(bx*pixelSize + (pixelSize>>1), W-1);
+      const cy  = Math.min(by*pixelSize + (pixelSize>>1), H-1);
+      const idx = (cy*W+cx)*4;
+      let r=srcData[idx], g=srcData[idx+1], b=srcData[idx+2];
+
+      if (matrix) {
+        const t = (matrix[by%size][bx%size]/maxVal - .5) * 255 * strength;
+        r = Math.max(0, Math.min(255, r+t));
+        g = Math.max(0, Math.min(255, g+t));
+        b = Math.max(0, Math.min(255, b+t));
+      }
+      const c = nearestColor(r,g,b);
+      // ブロック全体にImageData直書き
+      const x0=bx*pixelSize, y0=by*pixelSize;
+      const x1=Math.min(x0+pixelSize,W), y1=Math.min(y0+pixelSize,H);
+      for (let py=y0; py<y1; py++) {
+        const rowBase = py*W*4;
+        for (let px=x0; px<x1; px++) {
+          const oi = rowBase + px*4;
+          outData[oi]=c.r; outData[oi+1]=c.g; outData[oi+2]=c.b; outData[oi+3]=255;
+        }
+      }
+    }
+  }
+  dstCtx.putImageData(outImg, 0, 0);
+}
+
+// ===== Error Diffusion Dithering（Floyd-Steinberg / Atkinson） =====
+// fillRect連発→ImageData直書きで高速化
+function _errorDiffuse(srcCtx, dstCtx, W, H, pixelSize, method, strength) {
+  const pW = Math.ceil(W/pixelSize), pH = Math.ceil(H/pixelSize);
+  const srcData = srcCtx.getImageData(0,0,W,H).data;
+
+  const buf = new Float32Array(pW * pH * 3);
+  for (let by=0; by<pH; by++) {
+    for (let bx=0; bx<pW; bx++) {
+      let rr=0, gg=0, bb=0, cnt=0;
+      const x0=bx*pixelSize, y0=by*pixelSize;
+      const x1=Math.min(x0+pixelSize,W), y1=Math.min(y0+pixelSize,H);
+      for (let py=y0; py<y1; py++) {
+        const rowBase=py*W*4;
+        for (let px=x0; px<x1; px++) {
+          const i=rowBase+px*4;
+          rr+=srcData[i]; gg+=srcData[i+1]; bb+=srcData[i+2]; cnt++;
+        }
+      }
+      const bi=(by*pW+bx)*3;
+      buf[bi]=rr/cnt; buf[bi+1]=gg/cnt; buf[bi+2]=bb/cnt;
+    }
+  }
+
+  const outImg  = dstCtx.createImageData(W, H);
+  const outData = outImg.data;
+
+  for (let by=0; by<pH; by++) {
+    for (let bx=0; bx<pW; bx++) {
+      const bi=(by*pW+bx)*3;
+      const r=Math.max(0,Math.min(255,buf[bi]));
+      const g=Math.max(0,Math.min(255,buf[bi+1]));
+      const b=Math.max(0,Math.min(255,buf[bi+2]));
+      const c = nearestColor(r,g,b);
+
+      // ImageData直書き
+      const x0=bx*pixelSize, y0=by*pixelSize;
+      const x1=Math.min(x0+pixelSize,W), y1=Math.min(y0+pixelSize,H);
+      for (let py=y0; py<y1; py++) {
+        const rowBase=py*W*4;
+        for (let px=x0; px<x1; px++) {
+          const oi=rowBase+px*4;
+          outData[oi]=c.r; outData[oi+1]=c.g; outData[oi+2]=c.b; outData[oi+3]=255;
+        }
+      }
+
+      const er=(r-c.r)*strength, eg=(g-c.g)*strength, eb=(b-c.b)*strength;
+      const addErr = (dx,dy,f) => {
+        const nx=bx+dx, ny=by+dy;
+        if (nx>=0 && nx<pW && ny<pH) {
+          const ni=(ny*pW+nx)*3;
+          buf[ni]+=er*f; buf[ni+1]+=eg*f; buf[ni+2]+=eb*f;
+        }
+      };
+      if (method==='floyd') {
+        addErr(1,0,7/16); addErr(-1,1,3/16); addErr(0,1,5/16); addErr(1,1,1/16);
+      } else {
+        addErr(1,0,1/8); addErr(2,0,1/8); addErr(-1,1,1/8);
+        addErr(0,1,1/8); addErr(1,1,1/8); addErr(0,2,1/8);
+      }
+    }
+  }
+  dstCtx.putImageData(outImg, 0, 0);
+}
+
+// ===== 保存：PC→直接DL、iPhone→長押しモーダル =====
+function downloadResult() {
+  const canvas = document.getElementById('outputCanvas');
+  const fname  = sourceFileName + '_pixel.png';
+
+  // 大きい画像はクラッシュ防止で縮小
+  const MAX = 1200;
+  let w=canvas.width, h=canvas.height;
+  if (w>MAX||h>MAX) { const s=Math.min(MAX/w,MAX/h); w=Math.floor(w*s); h=Math.floor(h*s); }
+  const tmp = document.createElement('canvas');
+  tmp.width=w; tmp.height=h;
+  const tc = tmp.getContext('2d');
+  tc.imageSmoothingEnabled = false;
+  tc.drawImage(canvas, 0, 0, w, h);
+
+  saveCanvasAsPng(tmp, fname);
+}
+
+// 保存共通：ネイティブアプリ(iOS/macOS WKWebView)→ダイアログ、iOS Safari→長押しモーダル、PC→直接DL
+function saveCanvasAsPng(canvas, filename) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  try {
+    canvas.toBlob(blob => {
+      if (!blob) { alert('保存エラー: Blob生成失敗'); return; }
+      const useNativeSave = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveImage);
+      if (useNativeSave) {
+        // ネイティブアプリ（iOS/macOS）→ ダイアログで保存
+        const reader = new FileReader();
+        reader.onload = ev => {
+          window.webkit.messageHandlers.saveImage.postMessage({ filename, dataURL: ev.target.result });
+          URL.revokeObjectURL(blob);
+        };
+        reader.readAsDataURL(blob);
+        return;
+      }
+      if (isIOS) {
+        // iOS Safari → 長押しモーダル
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const dataURL = ev.target.result;
+          const old = document.getElementById('saveModal');
+          if (old) old.remove();
+          const modal = document.createElement('div');
+          modal.id = 'saveModal';
+          modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;box-sizing:border-box;';
+          modal.innerHTML = `
+            <div style="color:#0ff;font-family:monospace;font-size:13px;text-align:center;">📱 画像を長押し →「写真に追加」で保存</div>
+            <img src="${dataURL}" style="max-width:88vw;max-height:65vh;image-rendering:pixelated;border:2px solid #333;-webkit-touch-callout:default;">
+            <button onclick="document.getElementById('saveModal').remove()"
+              style="padding:10px 28px;background:#1a1a2e;color:#e0e0f0;border:1px solid #2a2a3a;border-radius:4px;cursor:pointer;font-family:monospace;font-size:13px;">✕ 閉じる</button>
+            <div style="color:#555;font-family:monospace;font-size:11px;">${filename}</div>
+          `;
+          modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+          document.body.appendChild(modal);
+        };
+        reader.readAsDataURL(blob);
+      } else {
+        // PC・Android → 直接DL
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+      }
+    }, 'image/png');
+  } catch(e) { alert('保存エラー: ' + e.message); }
+}
+
+// ===== 初期化 =====
+renderPalette();
+
+// ===== ライトボックス（OUTPUT canvasクリックで拡大表示・ズームパン対応） =====
+(function() {
+  const CANVAS_ID = 'outputCanvas';
+  let lb = null;
+  let lbImg = null;
+  let lbZoomLabel = null;
+  let lbState = { zoom: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
+  let prevTouches = [];
+
+  function mkBtn(label, color) {
+    const b = document.createElement('button');
+    const c = color || '#7a7a90';
+    b.textContent = label;
+    b.style.cssText = `padding:8px 16px;background:rgba(0,0,0,.5);border:1px solid ${c};color:${c};font-family:'Courier New',monospace;font-size:13px;border-radius:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;min-width:44px;min-height:44px;`;
+    return b;
+  }
+
+  function buildLightbox() {
+    if (lb) return;
+    lb = document.createElement('div');
+    lb.id = 'lb-overlay';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;';
+
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.7);z-index:2;';
+
+    lbZoomLabel = document.createElement('span');
+    lbZoomLabel.style.cssText = "font-family:'Courier New',monospace;font-size:11px;color:#888;";
+    lbZoomLabel.textContent = 'ZOOM: 100%';
+
+    const btnIn    = mkBtn('＋');
+    const btnOut   = mkBtn('－');
+    const btnFit   = mkBtn('FIT');
+    const spacer   = document.createElement('span');
+    spacer.style.flex = '1';
+    const btnClose = mkBtn('✕ 閉じる', '#ff5a5a');
+
+    btnIn.addEventListener('click',    e => { e.stopPropagation(); lbZoom(lbState.zoom * 1.3); });
+    btnOut.addEventListener('click',   e => { e.stopPropagation(); lbZoom(lbState.zoom / 1.3); });
+    btnFit.addEventListener('click',   e => { e.stopPropagation(); fitLb(); });
+    btnClose.addEventListener('click', e => { e.stopPropagation(); closeLb(); });
+    btnClose.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); closeLb(); });
+
+    bar.append(lbZoomLabel, btnIn, btnOut, btnFit, spacer, btnClose);
+    lb.appendChild(bar);
+
+    lbImg = document.createElement('canvas');
+    lbImg.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;cursor:grab;position:absolute;transform-origin:0 0;';
+    lb.appendChild(lbImg);
+
+    lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
+
+    lb.addEventListener('wheel', e => {
+      e.preventDefault();
+      const r = lb.getBoundingClientRect();
+      lbZoomAt(lbState.zoom * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+
+    lb.addEventListener('mousedown', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      lbState.dragging = true;
+      lbState.sx = e.clientX; lbState.sy = e.clientY;
+      lbState.spx = lbState.panX; lbState.spy = lbState.panY;
+      lbImg.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!lbState.dragging) return;
+      lbState.panX = lbState.spx + (e.clientX - lbState.sx);
+      lbState.panY = lbState.spy + (e.clientY - lbState.sy);
+      applyLbTransform();
+    });
+    document.addEventListener('mouseup', () => {
+      lbState.dragging = false;
+      if (lbImg) lbImg.style.cursor = 'grab';
+    });
+
+    lb.addEventListener('touchstart', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      e.preventDefault();
+      prevTouches = Array.from(e.touches);
+      if (prevTouches.length === 1) {
+        lbState.dragging = true;
+        lbState.sx = prevTouches[0].clientX; lbState.sy = prevTouches[0].clientY;
+        lbState.spx = lbState.panX; lbState.spy = lbState.panY;
+      } else {
+        lbState.dragging = false;
+      }
+    }, { passive: false });
+
+    lb.addEventListener('touchmove', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      e.preventDefault();
+      const t = Array.from(e.touches);
+      if (t.length === 1 && lbState.dragging) {
+        lbState.panX = lbState.spx + (t[0].clientX - lbState.sx);
+        lbState.panY = lbState.spy + (t[0].clientY - lbState.sy);
+        applyLbTransform();
+      } else if (t.length === 2 && prevTouches.length === 2) {
+        const prevD = Math.hypot(prevTouches[0].clientX - prevTouches[1].clientX, prevTouches[0].clientY - prevTouches[1].clientY);
+        const newD  = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        const r = lb.getBoundingClientRect();
+        const mx = (t[0].clientX + t[1].clientX) / 2 - r.left;
+        const my = (t[0].clientY + t[1].clientY) / 2 - r.top;
+        if (prevD > 0) lbZoomAt(lbState.zoom * (newD / prevD), mx, my);
+        prevTouches = t;
+      }
+    }, { passive: false });
+
+    lb.addEventListener('touchend', e => {
+      if (e.touches.length === 0) lbState.dragging = false;
+      prevTouches = Array.from(e.touches);
+    });
+
+    document.body.appendChild(lb);
+  }
+
+  function openLb(srcCanvas) {
+    buildLightbox();
+    lbImg.width  = srcCanvas.width;
+    lbImg.height = srcCanvas.height;
+    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
+    lb.style.display = 'block';
+    fitLb();
+  }
+
+  function closeLb() {
+    if (lb) lb.style.display = 'none';
+    lbState.dragging = false;
+  }
+
+  function fitLb() {
+    const pw = lb.clientWidth, ph = lb.clientHeight - 56;
+    const z = Math.min(1, (pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
+    lbState.panX = (pw - lbImg.width  * z) / 2;
+    lbState.panY = (ph - lbImg.height * z) / 2 + 56;
+    lbZoom(z);
+  }
+
+  function lbZoom(z) {
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    applyLbTransform();
+    if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
+  }
+
+  function lbZoomAt(z, ox, oy) {
+    const old = lbState.zoom;
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
+    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
+    applyLbTransform();
+    if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
+  }
+
+  function applyLbTransform() {
+    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
+  }
+
+  function attachLbTrigger(wrapperId) {
+    const wrapper = document.getElementById(wrapperId);
+    if (!wrapper) return;
+    const hint = document.createElement('div');
+    hint.style.cssText = 'position:absolute;bottom:6px;right:8px;font-size:10px;color:rgba(255,255,255,.35);font-family:monospace;pointer-events:none;letter-spacing:.05em;z-index:2;';
+    hint.textContent = '🔍 タップで拡大';
+    wrapper.style.position = 'relative';
+    wrapper.appendChild(hint);
+    wrapper.addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      const c = document.getElementById(CANVAS_ID);
+      if (!c || c.style.display === 'none') return;
+      openLb(c);
+    });
+  }
+
+  attachLbTrigger('outputWrapper');
+})();
+</script>
+</body>
+</html>
+  let lb = null;
+  let lbImg = null;
+  let lbState = { zoom: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
+
+  function buildLightbox() {
+    if (lb) return;
+    lb = document.createElement('div');
+    lb.id = 'lb-overlay';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;';
+
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,0,0,.6);z-index:1;';
+    bar.innerHTML = `
+      <span style="font-family:'Courier New',monospace;font-size:11px;color:#888;letter-spacing:.1em;">ZOOM: <span id="lb-zoom-val">100%</span></span>
+      <button id="lb-zin"  style="${btnStyle()}">＋</button>
+      <button id="lb-zout" style="${btnStyle()}">－</button>
+      <button id="lb-fit"  style="${btnStyle()}">FIT</button>
+      <span style="flex:1"></span>
+      <button id="lb-close" style="${btnStyle('#ff5a5a')}">✕ 閉じる</button>
+    `;
+    lb.appendChild(bar);
+
+    lbImg = document.createElement('canvas');
+    lbImg.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;cursor:grab;position:absolute;transform-origin:0 0;';
+    lb.appendChild(lbImg);
+
+    lb.querySelector('#lb-close').addEventListener('click', closeLb);
+    lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
+    lb.querySelector('#lb-zin').addEventListener('click',  () => lbZoom(lbState.zoom * 1.3));
+    lb.querySelector('#lb-zout').addEventListener('click', () => lbZoom(lbState.zoom / 1.3));
+    lb.querySelector('#lb-fit').addEventListener('click',  fitLb);
+
+    lb.addEventListener('wheel', e => {
+      e.preventDefault();
+      const r = lb.getBoundingClientRect();
+      lbZoomAt(lbState.zoom * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+
+    lb.addEventListener('mousedown', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      lbState.dragging = true; lbState.sx = e.clientX; lbState.sy = e.clientY;
+      lbState.spx = lbState.panX; lbState.spy = lbState.panY;
+      lbImg.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!lbState.dragging) return;
+      lbState.panX = lbState.spx + (e.clientX - lbState.sx);
+      lbState.panY = lbState.spy + (e.clientY - lbState.sy);
+      applyLbTransform();
+    });
+    document.addEventListener('mouseup', () => { lbState.dragging = false; if (lbImg) lbImg.style.cursor = 'grab'; });
+
+    let touches = [];
+    lb.addEventListener('touchstart', e => {
+      e.preventDefault();
+      touches = Array.from(e.touches);
+      if (touches.length === 1) {
+        lbState.dragging = true; lbState.sx = touches[0].clientX; lbState.sy = touches[0].clientY;
+        lbState.spx = lbState.panX; lbState.spy = lbState.panY;
+      }
+    }, { passive: false });
+    lb.addEventListener('touchmove', e => {
+      e.preventDefault();
+      const t = Array.from(e.touches);
+      if (t.length === 1 && lbState.dragging) {
+        lbState.panX = lbState.spx + (t[0].clientX - lbState.sx);
+        lbState.panY = lbState.spy + (t[0].clientY - lbState.sy);
+        applyLbTransform();
+      } else if (t.length === 2) {
+        lbState.dragging = false;
+        const prevDist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+        const newDist  = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        const r = lb.getBoundingClientRect();
+        const mx = (t[0].clientX + t[1].clientX) / 2 - r.left;
+        const my = (t[0].clientY + t[1].clientY) / 2 - r.top;
+        lbZoomAt(lbState.zoom * (newDist / prevDist), mx, my);
+        touches = t;
+      }
+    }, { passive: false });
+    lb.addEventListener('touchend', e => { if (e.touches.length === 0) lbState.dragging = false; });
+
+    document.body.appendChild(lb);
+  }
+
+  function btnStyle(color) {
+    const c = color || '#7a7a90';
+    return `padding:4px 12px;background:transparent;border:1px solid ${c};color:${c};font-family:'Courier New',monospace;font-size:11px;border-radius:4px;cursor:pointer;-webkit-tap-highlight-color:transparent;`;
+  }
+
+  function openLb(srcCanvas) {
+    buildLightbox();
+    lbImg.width  = srcCanvas.width;
+    lbImg.height = srcCanvas.height;
+    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
+    lb.style.display = 'flex';
+    fitLb();
+  }
+
+  function closeLb() {
+    if (lb) lb.style.display = 'none';
+  }
+
+  function fitLb() {
+    const pw = lb.clientWidth, ph = lb.clientHeight - 50;
+    const z = Math.min(1, (pw - 40) / lbImg.width, (ph - 40) / lbImg.height);
+    lbState.panX = (pw - lbImg.width  * z) / 2;
+    lbState.panY = (ph - lbImg.height * z) / 2 + 50;
+    lbZoom(z);
+  }
+
+  function lbZoom(z) {
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    applyLbTransform();
+    document.getElementById('lb-zoom-val').textContent = Math.round(lbState.zoom * 100) + '%';
+  }
+
+  function lbZoomAt(z, ox, oy) {
+    const old = lbState.zoom;
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
+    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
+    applyLbTransform();
+    document.getElementById('lb-zoom-val').textContent = Math.round(lbState.zoom * 100) + '%';
+  }
+
+  function applyLbTransform() {
+    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
+  }
+
+  function attachLbTrigger(wrapperId) {
+    const wrapper = document.getElementById(wrapperId);
+    if (!wrapper) return;
+    const hint = document.createElement('div');
+    hint.style.cssText = 'position:absolute;bottom:6px;right:8px;font-size:10px;color:rgba(255,255,255,.35);font-family:monospace;pointer-events:none;letter-spacing:.05em;z-index:2;';
+    hint.textContent = '🔍 タップで拡大';
+    wrapper.style.position = 'relative';
+    wrapper.appendChild(hint);
+
+    wrapper.addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      const c = document.getElementById(CANVAS_ID);
+      if (!c || c.style.display === 'none') return;
+      openLb(c);
+    });
+  }
+
+  attachLbTrigger('outputWrapper');
+})();
+</script>
+</body>
+</html>
