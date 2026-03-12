@@ -1,0 +1,34 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows/BinarizeApp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Publish (Single File)
+        run: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=false
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BinarizeApp-win-x64
+          path: windows/BinarizeApp/bin/Release/net8.0-windows/win-x64/publish/
