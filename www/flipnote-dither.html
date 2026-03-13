@@ -1450,7 +1450,7 @@ renderPalette();
     lbImg.height = srcCanvas.height;
     lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
     lb.style.display = 'block';
-    fitLb();
+    requestAnimationFrame(() => requestAnimationFrame(() => fitLb()));
   }
 
   function closeLb() {
