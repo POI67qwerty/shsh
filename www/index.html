@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>線画化＋塗りツール</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <h1>▸ 線画化＋塗りツール</h1>
+  <p class="sub">ILLUSTRATION → LINE ART + FILL TOOL</p>
+
+  <!-- ツールナビゲーション -->
+  <nav class="tool-nav" aria-label="ツール一覧">
+    <div class="tool-nav-label">TOOLS</div>
+    <div class="tool-nav-grid">
+      <a class="tool-card active-tool" href="index.html" aria-current="page">
+        <span class="tool-card-icon">✒</span>
+        <span class="tool-card-name">線画化＋塗り</span>
+        <span class="tool-card-desc">Line Art + Fill</span>
+        <span class="tool-card-dot"></span>
+      </a>
+      <a class="tool-card" href="pixel-dither.html">
+        <span class="tool-card-icon">🧊</span>
+        <span class="tool-card-name">Pixel Dither</span>
+        <span class="tool-card-desc">ピクセル変換</span>
+        <span class="tool-card-dot"></span>
+      </a>
+      <a class="tool-card" href="manga-tone.html">
+        <span class="tool-card-icon">🟪</span>
+        <span class="tool-card-name">Manga Tone</span>
+        <span class="tool-card-desc">漫画トーン</span>
+        <span class="tool-card-dot"></span>
+      </a>
+      <a class="tool-card" href="flipnote-dither.html">
+        <span class="tool-card-icon">✏️</span>
+        <span class="tool-card-name">Flipnote Dither</span>
+        <span class="tool-card-desc">ディザリング</span>
+        <span class="tool-card-dot"></span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="main">
+
+    <!-- ① 画像を選択 -->
+    <div class="panel">
+      <div class="panel-title">① 画像を選択</div>
+      <label class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept="image/*">
+        <span class="icon">🖼️</span>
+        <div class="upload-text">
+          <span class="main-text">クリックまたはドラッグ＆ドロップで画像を選択</span>
+          <span class="hint">PNG / JPG / WEBP など対応　<strong>ファイルは外部送信されません</strong></span>
+        </div>
+      </label>
+      <div class="status" id="status">画像を選んでにょ🐮</div>
+    </div>
+
+    <!-- ② 機能タブ -->
+    <div class="panel">
+      <div class="tab-row">
+        <button class="tab-btn active" data-tab="lineart">◼ 線画化</button>
+        <button class="tab-btn" data-tab="paint">🖌 囲って塗る</button>
+        <button class="tab-btn" data-tab="bucket">🪣 バケツ</button>
+        <button class="tab-btn" data-tab="auto">✨ 自動塗り分け</button>
+        <button class="tab-btn" data-tab="dust">🧹 ゴミトリ</button>
+      </div>
+
+      <!-- ---- 線画化タブ ---- -->
+      <div class="tab-content active" id="tabLineart">
+        <div class="panel-title">変換モード</div>
+        <div class="mode-row" id="modeRow">
+          <button class="mode-btn" data-mode="threshold">
+            ◼ シンプル2値化<br>
+            <span style="font-size:.7rem;color:var(--text-dim)">明暗をそのまま白黒に</span>
+          </button>
+          <button class="mode-btn" data-mode="edge">
+            〇 エッジ検出（輪郭）<br>
+            <span style="font-size:.7rem;color:var(--text-dim)">線・輪郭だけを抽出</span>
+          </button>
+          <button class="mode-btn" data-mode="both">
+            ◈ 両方重ねる<br>
+            <span style="font-size:.7rem;color:var(--text-dim)">2値＋エッジの合成</span>
+          </button>
+          <button class="mode-btn active" data-mode="adaptive">
+            ◉ 適応的2値化<br>
+            <span style="font-size:.7rem;color:var(--text-dim)">カスレに強い・アニメ向け</span>
+          </button>
+          <button class="mode-btn" data-mode="thinning">
+            ⊘ 細線化（Zhang-Suen）<br>
+            <span style="font-size:.7rem;color:var(--text-dim)">線を1px幅に整形</span>
+          </button>
+          <button class="mode-btn" data-mode="scan">
+            📄 手描きスキャン<br>
+            <span style="font-size:.7rem;color:var(--text-dim)">紙の色むら・鉛筆線に対応</span>
+          </button>
+        </div>
+        <div class="sliders" style="margin-top:18px">
+          <div class="slider-row" id="rowThreshold">
+            <div class="slider-label">しきい値 <span id="valThreshold">128</span></div>
+            <input type="range" id="threshold" min="0" max="255" value="128">
+          </div>
+          <div class="slider-row" id="rowBlur">
+            <div class="slider-label">ぼかし（前処理） <span id="valBlur">1</span></div>
+            <input type="range" id="blur" min="0" max="5" value="1">
+          </div>
+          <div class="slider-row" id="rowEdgeStr">
+            <div class="slider-label">エッジ強度 <span id="valEdgeStr">100</span></div>
+            <input type="range" id="edgeStr" min="10" max="300" value="100">
+          </div>
+          <div class="slider-row" id="rowLineWidth">
+            <div class="slider-label">ライン幅 <span id="valLineWidth">1.0</span>px　<span
+                style="font-size:.7rem;color:var(--text-dim)">1.0未満で細く・以上で太く</span></div>
+            <input type="range" id="lineWidth" min="1" max="100" step="1" value="10">
+          </div>
+          <div class="slider-row" id="rowAdaptiveBlock">
+            <div class="slider-label">適応ブロックサイズ <span id="valAdaptBlock">15</span></div>
+            <input type="range" id="adaptBlock" min="3" max="51" step="2" value="15">
+          </div>
+          <div class="slider-row" id="rowAdaptC">
+            <div class="slider-label">適応バイアス(C) <span id="valAdaptC">8</span></div>
+            <input type="range" id="adaptC" min="-20" max="40" value="8">
+          </div>
+          <div class="slider-row" id="rowThinNoise">
+            <div class="slider-label">ノイズ除去（後処理） <span id="valThinNoise">5</span></div>
+            <input type="range" id="thinNoise" min="0" max="5" value="5">
+          </div>
+          <div class="slider-row" id="rowScanBg">
+            <div class="slider-label">背景除去強度 <span id="valScanBg">60</span></div>
+            <input type="range" id="scanBg" min="10" max="200" value="60">
+          </div>
+          <div class="slider-row" id="rowScanContrast">
+            <div class="slider-label">コントラスト強調 <span id="valScanContrast">1.5</span>x</div>
+            <input type="range" id="scanContrast" min="10" max="50" value="15">
+          </div>
+          <div class="slider-row" id="rowScanThin">
+            <div class="slider-label">細線化 <span id="valScanThin" style="color:var(--accent)">OFF</span></div>
+            <input type="range" id="scanThin" min="0" max="1" step="1" value="0">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">ブラックポイント <span id="valBlacks" style="color:var(--accent)">0</span></div>
+            <input type="range" id="blacks" min="0" max="100" value="0">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">シャドウ <span id="valShadows" style="color:var(--accent)">0</span></div>
+            <input type="range" id="shadows" min="-100" max="100" value="0">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">ハイライト <span id="valHighlights" style="color:var(--accent)">0</span></div>
+            <input type="range" id="highlights" min="-100" max="100" value="0">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">白黒反転</div>
+            <button class="btn btn-secondary" id="invertBtn" style="padding:6px 18px;font-size:.78rem;">OFF</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- 囲って塗るタブ ---- -->
+      <div class="tab-content" id="tabPaint">
+        <div class="panel-title" style="color:var(--accent2)">囲って塗る設定</div>
+        <div class="color-row" id="colorRowPaint">
+          <div class="color-swatch selected" style="background:#e8405a" data-color="#e8405a"></div>
+          <div class="color-swatch" style="background:#4a9eff" data-color="#4a9eff"></div>
+          <div class="color-swatch" style="background:#44cc77" data-color="#44cc77"></div>
+          <div class="color-swatch" style="background:#ffcc00" data-color="#ffcc00"></div>
+          <div class="color-swatch" style="background:#cc77ff" data-color="#cc77ff"></div>
+          <div class="color-swatch" style="background:#ff8833" data-color="#ff8833"></div>
+          <div class="color-swatch" style="background:#ffffff" data-color="#ffffff"></div>
+          <div class="color-swatch" style="background:#000000;border-color:#444" data-color="#000000"></div>
+          <div class="color-custom-wrap">
+            <label>カスタム</label>
+            <input type="color" id="colorCustomPaint" value="#e8405a">
+          </div>
+        </div>
+        <div class="sliders" style="margin-top:14px">
+          <div class="slider-row">
+            <div class="slider-label">隙間とじ強度 <span id="valGapClose" style="color:var(--accent2)">4</span>px</div>
+            <input type="range" id="gapClose" min="0" max="20" value="4">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">塗り透明度 <span id="valFillAlpha" style="color:var(--accent2)">100</span>%</div>
+            <input type="range" id="fillAlpha" min="10" max="100" value="100">
+          </div>
+        </div>
+        <div style="margin-top:14px;font-size:.78rem;color:var(--text-dim)">
+          塗る対象：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="paintTarget" value="result" checked>
+            線画変換後</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="paintTarget" value="orig">
+            元画像</label>
+        </div>
+        <div style="margin-top:10px;font-size:.78rem;color:var(--text-dim)">
+          モード：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="paintMode" value="fill" checked>
+            塗る</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="paintMode" value="erase">
+            消しゴム</label>
+        </div>
+        <div style="margin-top:14px" class="btn-row">
+          <button class="btn btn-warn" id="btnUndoFill">↩ 1つ戻す</button>
+          <button class="btn btn-warn" id="btnClearFill">✕ 塗りリセット</button>
+        </div>
+        <div style="margin-top:8px;font-size:.72rem;color:var(--text-dim)">▶ キャンバス上でぐるっとなぞると塗りつぶし　Cmd/Ctrl+Z でUNDO</div>
+      </div>
+
+      <!-- ---- バケツ塗りタブ ---- -->
+      <div class="tab-content" id="tabBucket">
+        <div class="panel-title" style="color:var(--accent3)">バケツ塗り設定</div>
+        <div class="color-row" id="colorRowBucket">
+          <div class="color-swatch selected" style="background:#e8405a" data-color="#e8405a"></div>
+          <div class="color-swatch" style="background:#4a9eff" data-color="#4a9eff"></div>
+          <div class="color-swatch" style="background:#44cc77" data-color="#44cc77"></div>
+          <div class="color-swatch" style="background:#ffcc00" data-color="#ffcc00"></div>
+          <div class="color-swatch" style="background:#cc77ff" data-color="#cc77ff"></div>
+          <div class="color-swatch" style="background:#ff8833" data-color="#ff8833"></div>
+          <div class="color-swatch" style="background:#ffffff" data-color="#ffffff"></div>
+          <div class="color-swatch" style="background:#000000;border-color:#444" data-color="#000000"></div>
+          <div class="color-custom-wrap">
+            <label>カスタム</label>
+            <input type="color" id="colorCustomBucket" value="#e8405a">
+          </div>
+        </div>
+        <div class="sliders" style="margin-top:14px">
+          <div class="slider-row">
+            <div class="slider-label">隙間とじ強度 <span id="valBucketGap" style="color:var(--accent3)">4</span>px</div>
+            <input type="range" id="bucketGap" min="0" max="20" value="4">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">塗り透明度 <span id="valBucketAlpha" style="color:var(--accent3)">100</span>%</div>
+            <input type="range" id="bucketAlpha" min="10" max="100" value="100">
+          </div>
+        </div>
+        <div style="margin-top:14px;font-size:.78rem;color:var(--text-dim)">
+          塗る対象：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="bucketTarget" value="result"
+              checked> 線画変換後</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="bucketTarget" value="orig">
+            元画像</label>
+        </div>
+        <div style="margin-top:10px;font-size:.78rem;color:var(--text-dim)">
+          モード：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="bucketMode" value="fill" checked>
+            塗る</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="bucketMode" value="erase">
+            消しゴム</label>
+        </div>
+        <div style="margin-top:14px" class="btn-row">
+          <button class="btn btn-warn" id="btnUndoBucket">↩ 1つ戻す</button>
+          <button class="btn btn-warn" id="btnClearBucket">✕ 塗りリセット</button>
+        </div>
+        <div style="margin-top:8px;font-size:.72rem;color:var(--text-dim)">▶ キャンバスをクリックした場所から塗りつぶし　Cmd/Ctrl+Z でUNDO
+        </div>
+      </div>
+
+      <!-- ---- 自動塗り分けタブ ---- -->
+      <div class="tab-content" id="tabAuto">
+        <div class="panel-title" style="color:var(--accent4)">自動塗り分け設定</div>
+        <div class="sliders">
+          <div class="slider-row">
+            <div class="slider-label">隙間とじ強度 <span id="valAutoGap" style="color:var(--accent4)">3</span>px</div>
+            <input type="range" id="autoGap" min="0" max="20" value="3">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">最小領域サイズ <span id="valAutoMin" style="color:var(--accent4)">200</span>px</div>
+            <input type="range" id="autoMin" min="10" max="2000" value="200">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">穴埋め（白残り除去） <span id="valFillHoles" style="color:var(--accent4)">ON</span></div>
+            <input type="range" id="fillHoles" min="0" max="1" step="1" value="1">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">塗り透明度 <span id="valAutoAlpha" style="color:var(--accent4)">100</span>%</div>
+            <input type="range" id="autoAlpha" min="10" max="100" value="100">
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <div style="font-size:.72rem;color:var(--text-dim);margin-bottom:8px;letter-spacing:.1em">使用する色パレット</div>
+          <div class="auto-palette" id="autoPalette"></div>
+          <div class="color-custom-wrap" style="margin-top:8px">
+            <label>色を追加</label>
+            <input type="color" id="autoAddColor" value="#ff6688">
+            <button class="btn btn-accent4" id="btnAutoAddColor" style="padding:5px 12px;font-size:.75rem;">＋追加</button>
+          </div>
+        </div>
+        <div style="margin-top:14px;font-size:.78rem;color:var(--text-dim)">
+          塗る対象：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="autoTarget" value="result" checked>
+            線画変換後</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="autoTarget" value="orig">
+            元画像</label>
+        </div>
+        <div style="margin-top:14px" class="btn-row">
+          <button class="btn btn-accent4" id="btnAutoRun">✨ 自動塗り分けを実行</button>
+          <button class="btn btn-warn" id="btnUndoAuto">↩ 1つ戻す</button>
+          <button class="btn btn-warn" id="btnClearAuto">✕ 塗りリセット</button>
+        </div>
+        <div class="progress-bar" id="progressBar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div style="margin-top:8px;font-size:.72rem;color:var(--text-dim)">▶ 線で囲まれた領域を自動検出してパレットの色を割り当てるにょ　Cmd/Ctrl+Z
+          でUNDO</div>
+      </div>
+
+      <!-- ---- ゴミトリタブ ---- -->
+      <div class="tab-content" id="tabDust">
+        <div class="panel-title" style="color:#aaa">🧹 ゴミトリ設定</div>
+        <div class="sliders">
+          <div class="slider-row">
+            <div class="slider-label">孤立点除去サイズ <span id="valDustSize">30</span>px²以下</div>
+            <input type="range" id="dustSize" min="1" max="500" value="30">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">細線ノイズ除去 <span id="valDustThin">3</span>px以下</div>
+            <input type="range" id="dustThin" min="0" max="50" value="3">
+          </div>
+        </div>
+        <!-- ゴミトリモード -->
+        <div style="margin-top:14px;font-size:.78rem;color:var(--text-dim)">
+          モード：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="dustMode" value="erase" checked>
+            🧹 消す（白く）</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="dustMode" value="fill">
+            ✏️ 塗りつぶし（黒く）</label>
+        </div>
+        <div style="margin-top:10px;font-size:.78rem;color:var(--text-dim)">
+          対象：
+          <label style="margin-left:10px;cursor:pointer;"><input type="radio" name="dustTarget" value="result" checked>
+            線画</label>
+          <label style="margin-left:14px;cursor:pointer;"><input type="radio" name="dustTarget" value="fill">
+            塗りレイヤー</label>
+        </div>
+        <div style="margin-top:14px" class="btn-row">
+          <button class="btn btn-primary" id="btnDustAll">⚡ 画像全体に適用</button>
+        </div>
+        <div style="margin-top:8px" class="btn-row">
+          <button class="btn btn-warn" id="btnDustUndo">↩ 1つ戻す</button>
+          <button class="btn btn-warn" id="btnDustReset">✕ リセット</button>
+        </div>
+        <div style="margin-top:8px;font-size:.72rem;color:var(--text-dim)">▶ ぐるっとなぞって範囲指定 or「全体に適用」ボタンで一括処理　Cmd/Ctrl+Z
+          でUNDO
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ プレビュー -->
+    <div class="panel">
+      <div class="panel-title">③ プレビュー</div>
+      <div class="preview-grid">
+        <div class="preview-box">
+          <span class="preview-label" id="resultLabel">変換結果</span>
+          <button class="zoom-reset-btn" id="btnZoomReset" title="ズームリセット">🔍×1</button>
+          <button class="zoom-reset-btn" id="btnPanToggle" title="パンモード" style="top:34px;">✋ PAN</button>
+          <div class="result-scroll" id="resultBox">
+            <div class="placeholder" id="placeholderResult">変換後がここに表示</div>
+            <div id="canvasWrap" style="position:relative;display:inline-block;line-height:0;">
+              <!-- 合成表示用（塗り＋線画をmultiply合成したもの） -->
+              <canvas id="canvasMerge"
+                style="display:none;max-width:100%;max-height:420px;image-rendering:pixelated;"></canvas>
+              <!-- 線画のみ（比較スライダー用：右半分だけclipで表示） -->
+              <canvas id="canvasResult"
+                style="display:none;max-width:100%;max-height:420px;image-rendering:pixelated;position:absolute;top:0;left:0;width:100%;height:100%;"></canvas>
+              <!-- 塗りのみ（比較スライダー用） -->
+              <canvas id="canvasFillView"
+                style="display:none;max-width:100%;max-height:420px;image-rendering:pixelated;position:absolute;top:0;left:0;width:100%;height:100%;"></canvas>
+              <!-- 塗りレイヤー（非表示・データ保持用） -->
+              <canvas id="canvasFill"
+                style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated;"></canvas>
+              <canvas id="canvasLasso" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;"
+                class="paintable"></canvas>
+              <!-- 比較スライダーライン -->
+              <div id="compareSlider"
+                style="display:none;position:absolute;top:0;bottom:0;width:2px;background:#7cffb2;cursor:ew-resize;z-index:10;left:50%;">
+                <div
+                  style="position:absolute;top:50%;transform:translate(-50%,-50%);background:#7cffb2;color:#0f0f11;font-size:10px;padding:3px 5px;border-radius:3px;white-space:nowrap;font-family:'Courier New',monospace;pointer-events:none;">
+                  ◀ ▶</div>
+              </div>
+            </div>
+          </div>
+          <!-- 比較スライダートグル -->
+          <button id="btnCompare"
+            style="display:none;position:absolute;bottom:8px;left:10px;font-size:.65rem;color:var(--text-dim);background:#111115cc;border:1px solid var(--border);padding:2px 8px;border-radius:4px;cursor:pointer;font-family:inherit;z-index:5;">比較</button>
+        </div>
+        <div class="preview-box">
+          <span class="preview-label">元画像</span>
+          <div class="placeholder" id="placeholderOrig">ここに元画像</div>
+          <canvas id="canvasOrig" style="display:none"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 保存 / コピー -->
+    <div class="panel">
+      <div class="panel-title">④ 保存 / コピー</div>
+
+      <div class="panel-title" style="margin-top:4px;margin-bottom:8px;font-size:.65rem;color:var(--text-dim)">── 線画 ──
+      </div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button class="btn btn-secondary" id="btnDownload" disabled>⬇ 保存</button>
+        <button class="btn btn-secondary" id="btnDownloadLineAlpha" disabled>⬇ 保存（白を透明）</button>
+        <button class="btn btn-primary" id="btnCopyLine" disabled>📋 コピー</button>
+        <button class="btn btn-primary" id="btnCopyLineAlpha" disabled>📋 コピー（白を透明）</button>
+      </div>
+
+      <div class="panel-title" style="margin-top:4px;margin-bottom:8px;font-size:.65rem;color:var(--text-dim)">── 塗り ──
+      </div>
+      <div class="btn-row" style="margin-bottom:6px">
+        <button class="btn btn-secondary" id="btnFillExpandToggle">線画埋め: OFF</button>
+      </div>
+      <div class="btn-row" style="margin-bottom:10px">
+        <button class="btn btn-accent3" id="btnDownloadMerge" disabled>⬇ 保存（線画込み）</button>
+        <button class="btn btn-accent3" id="btnDownloadFillAlpha" disabled>⬇ 保存（塗りのみ）</button>
+        <button class="btn btn-primary" id="btnCopyMerge" disabled>📋 コピー（線画込み）</button>
+        <button class="btn btn-primary" id="btnCopyFillAlpha" disabled>📋 コピー（塗りのみ）</button>
+      </div>
+
+      <div style="font-size:.7rem;color:var(--text-dim);line-height:1.7">
+        💡 コピー後にProcreateで<strong style="color:var(--accent)">ペースト</strong>するとレイヤーに追加されるにょ🐮
+      </div>
+    </div>
+
+  </div>
+
+  <script src="main.js"></script>
+</body>
+
+</html>
