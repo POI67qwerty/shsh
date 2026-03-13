@@ -801,7 +801,7 @@ renderPalette();
     lb.appendChild(bar);
 
     lbImg = document.createElement('canvas');
-    lbImg.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;cursor:grab;position:absolute;transform-origin:0 0;';
+    lbImg.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;cursor:grab;position:absolute;left:0;top:0;transform-origin:center center;';
     lb.appendChild(lbImg);
 
     lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
@@ -886,11 +886,17 @@ renderPalette();
   }
 
   function fitLb() {
-    const pw = lb.clientWidth, ph = lb.clientHeight - 56;
-    const z = Math.min(1, (pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
-    lbState.panX = (pw - lbImg.width  * z) / 2;
-    lbState.panY = (ph - lbImg.height * z) / 2 + 56;
-    lbZoom(z);
+    const pw = window.innerWidth;
+    const ph = window.innerHeight;
+    const barH = 56;
+    // 有効表示エリア（バー除く）に収まるzoomを計算
+    const z = Math.min((pw - 16) / lbImg.width, (ph - barH - 16) / lbImg.height);
+    lbState.zoom = Math.max(0.1, Math.min(16, z));
+    // panX/Y: center center基準なのでバー分だけ下にずらす
+    lbState.panX = 0;
+    lbState.panY = barH / 2;
+    applyLbTransform();
+    if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
   }
 
   function lbZoom(z) {
@@ -900,16 +906,27 @@ renderPalette();
   }
 
   function lbZoomAt(z, ox, oy) {
-    const old = lbState.zoom;
+    const oldZ = lbState.zoom;
     lbState.zoom = Math.max(0.1, Math.min(16, z));
-    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
-    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
+    // ox/oyはlb内座標 → ウィンドウ中央基準に変換してpan計算
+    const cx = window.innerWidth  / 2;
+    const cy = window.innerHeight / 2;
+    const dx = ox - cx, dy = oy - cy;
+    lbState.panX = lbState.panX + dx * (1 - lbState.zoom / oldZ);
+    lbState.panY = lbState.panY + dy * (1 - lbState.zoom / oldZ);
     applyLbTransform();
     if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
   }
 
   function applyLbTransform() {
-    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
+    // canvasのCSSサイズは変えない（縦横比崩れ防止）
+    // transform-origin:center center なのでcanvas中心を基準にtranslate+scale
+    lbImg.style.width  = '';
+    lbImg.style.height = '';
+    lbImg.style.left = '50%';
+    lbImg.style.top  = '50%';
+    // canvas中心がウィンドウ中央に来るようにmarginで調整した上でpan・zoom
+    lbImg.style.transform = `translate(calc(-50% + ${lbState.panX}px), calc(-50% + ${lbState.panY}px)) scale(${lbState.zoom})`;
   }
 
   function attachLbTrigger(wrapperId) {

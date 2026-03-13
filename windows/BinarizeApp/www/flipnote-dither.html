@@ -1450,7 +1450,7 @@ renderPalette();
     lbImg.height = srcCanvas.height;
     lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
     lb.style.display = 'block';
-    fitLb();
+    requestAnimationFrame(() => requestAnimationFrame(() => fitLb()));
   }
 
   function closeLb() {
@@ -1459,8 +1459,10 @@ renderPalette();
   }
 
   function fitLb() {
-    const pw = lb.clientWidth, ph = lb.clientHeight - 56;
-    const z = Math.min(1, (pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
+    const pw = lb.clientWidth || window.innerWidth;
+    const ph = (lb.clientHeight || window.innerHeight) - 56;
+    // Math.min(1,...) を外して画面サイズに合わせて拡大もする
+    const z = Math.min((pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
     lbState.panX = (pw - lbImg.width  * z) / 2;
     lbState.panY = (ph - lbImg.height * z) / 2 + 56;
     lbZoom(z);
