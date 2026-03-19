@@ -43,7 +43,7 @@ const sliderEdgeStr = document.getElementById('edgeStr');
 const sliderAdaptBlock = document.getElementById('adaptBlock');
 const sliderAdaptC = document.getElementById('adaptC');
 const sliderThinNoise = document.getElementById('thinNoise');
-const sliderLineWidth = document.getElementById('lineWidth');   // ライン幅（×0.1px）
+const sliderLineWidth = document.getElementById('lineWidth');   // 拡縮値（1〜20px）
 const sliderScanBg = document.getElementById('scanBg');
 const sliderScanContrast = document.getElementById('scanContrast');
 const sliderScanThin = document.getElementById('scanThin');
@@ -154,7 +154,7 @@ setupColorRow('colorRowBucket', 'colorCustomBucket', c => bucketColor = c);
   [sliderAdaptBlock, 'valAdaptBlock', null, true],
   [sliderAdaptC, 'valAdaptC', null, true],
   [sliderThinNoise, 'valThinNoise', null, true],
-  [sliderLineWidth, 'valLineWidth', v => (parseInt(v) / 10).toFixed(1), true],
+  [sliderLineWidth, 'valLineWidth', v => parseInt(v), true],
   [sliderScanBg, 'valScanBg', null, true],
   [sliderScanContrast, 'valScanContrast', v => (parseInt(v) / 10).toFixed(1), true],
   [sliderScanThin, 'valScanThin', v => v === '1' ? 'ON' : 'OFF', true],
@@ -207,12 +207,13 @@ function updateSliderVisibility() {
 }
 updateSliderVisibility();
 
-invertBtn.addEventListener('click', () => {
-  invert = !invert;
-  invertBtn.textContent = invert ? 'ON' : 'OFF';
-  invertBtn.style.borderColor = invert ? 'var(--accent)' : 'var(--accent2)';
-  invertBtn.style.color = invert ? 'var(--accent)' : 'var(--accent2)';
-  scheduleProcess();
+// 線幅修正モードのセレクト変更でも再処理
+document.getElementById('lineWidthMode').addEventListener('change', scheduleProcess);
+invert = !invert;
+invertBtn.textContent = invert ? 'ON' : 'OFF';
+invertBtn.style.borderColor = invert ? 'var(--accent)' : 'var(--accent2)';
+invertBtn.style.color = invert ? 'var(--accent)' : 'var(--accent2)';
+scheduleProcess();
 });
 
 // ============================================================
@@ -329,8 +330,9 @@ function autoOptimizeSettings(img) {
   document.getElementById('valBlur').textContent = blur;
 
   // ライン幅: デフォルト1.0px（10）のまま
-  sliderLineWidth.value = 10;
-  document.getElementById('valLineWidth').textContent = '1.0';
+  sliderLineWidth.value = 1;
+  document.getElementById('valLineWidth').textContent = '1';
+  document.getElementById('lineWidthMode').value = 'none';
 
   setStatus(`読み込み完了: ${img.width}×${img.height}px　自動最適化済み にょ🐮✋`, 'ok');
 }
@@ -468,28 +470,31 @@ function applyEdge(gray, out, W, H) {
   applyLineWidthDilation(out, W, H);
 }
 
-// ライン幅膨張：行列分離dilationでO(W×H×r)→O(W×H)に高速化
+// ============================================================
+// クリスタ「線幅修正」と同仕様の実装
+// mode: 'thicken'=指定幅で太らせる、'thin'=指定幅で細らせる、'none'=変更なし
+// r: 拡縮値（1〜20px整数）
+// 太らせる → 円形モルフォロジー膨張（黒ピクセルを半径rの円形に拡大）
+// 細らせる → 円形モルフォロジー収縮（黒ピクセルの外縁をr回削る）
+// ============================================================
 function applyLineWidthDilation(out, W, H) {
-  const r = parseInt(sliderLineWidth.value);
-  if (r <= 10) return;
-  const radius = (r - 10) / 10; // 実数半径（1.1→0.1、1.2→0.2...）
-  const ri = Math.ceil(radius);  // 切り上げ整数半径
-  if (ri < 1) return;
-
-  // サブピクセル膨張：distance² <= radius² なら膨張する
-  // 行列分離dilationだと真円にならないので円形マスクを使う
-  const r2 = radius * radius + 0.01; // 少し余裕を持たせる
+  const mode = document.getElementById('lineWidthMode').value;
+  if (mode !== 'thicken') return;
+  const r = parseInt(sliderLineWidth.value); // 1〜20px
+  const r2 = r * r;
   const src = out.slice();
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      if (out[y * W + x] === 0) continue; // 既に黒はスキップ
-      // 周囲ri内に黒ピクセルがあり、かつ距離がradius以内なら黒にする
+      if (src[y * W + x] === 0) continue; // 既に黒はスキップ
+      // 半径r円内に黒ピクセルがあれば黒にする
       let found = false;
-      for (let dy = -ri; dy <= ri && !found; dy++) {
-        for (let dx = -ri; dx <= ri && !found; dx++) {
-          if (dx * dx + dy * dy > r2) continue;
-          const nx = x + dx, ny = y + dy;
-          if (nx >= 0 && nx < W && ny >= 0 && ny < H && src[ny * W + nx] === 0) found = true;
+      const yMin = Math.max(0, y - r), yMax = Math.min(H - 1, y + r);
+      const xMin = Math.max(0, x - r), xMax = Math.min(W - 1, x + r);
+      for (let ny = yMin; ny <= yMax && !found; ny++) {
+        const dy = ny - y;
+        for (let nx = xMin; nx <= xMax && !found; nx++) {
+          const dx = nx - x;
+          if (dx * dx + dy * dy <= r2 && src[ny * W + nx] === 0) found = true;
         }
       }
       if (found) out[y * W + x] = 0;
@@ -497,18 +502,18 @@ function applyLineWidthDilation(out, W, H) {
   }
 }
 
-// ライン幅収縮：sliderLineWidthが1.0未満のとき外縁erosionで線を細くする
+// 指定幅で細らせる：円形モルフォロジー収縮（クリスタ同仕様）
 function applyLineThin(out, W, H) {
-  const r = parseInt(sliderLineWidth.value);
-  if (r >= 10) return; // 1.0px以上は変化なし
-  const iter = 10 - r; // r=1→9回、r=9→1回
-  for (let t = 0; t < iter; t++) {
+  const mode = document.getElementById('lineWidthMode').value;
+  if (mode !== 'thin') return;
+  const r = parseInt(sliderLineWidth.value); // 1〜20px
+  // r回の外縁削除（各イテレーションで4近傍に白があれば白にする）
+  for (let t = 0; t < r; t++) {
     const src = out.slice();
     for (let y = 1; y < H - 1; y++) {
       const row = y * W;
       for (let x = 1; x < W - 1; x++) {
         if (src[row + x] !== 0) continue;
-        // 4近傍に白があれば外縁→消す
         if (src[row + x - W] === 255 || src[row + x + W] === 255 ||
           src[row + x - 1] === 255 || src[row + x + 1] === 255) {
           out[row + x] = 255;
@@ -1727,27 +1732,35 @@ function saveCanvasAsPng(canvas, filename) {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   try {
-    // Blob URL方式（iOSを含む全環境で試みる）
-    canvas.toBlob(blob => {
+    canvas.toBlob(async blob => {
       if (!blob) { setStatus('保存エラー: Blob生成失敗にょ🐮', 'err'); return; }
-      const url = URL.createObjectURL(blob);
       const useNativeSave = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveImage);
       if (useNativeSave) {
         const reader = new FileReader();
         reader.onload = ev => {
           const dataURL = ev.target.result;
           window.webkit.messageHandlers.saveImage.postMessage({ filename, dataURL });
-          URL.revokeObjectURL(url);
         };
         reader.readAsDataURL(blob);
         return;
       }
       if (isIOS) {
-        // iPhoneはBlobダウンロードが効かないのでdataURL画像ページを表示→長押し保存
+        const shareFile = new File([blob], filename, { type: 'image/png' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+          try {
+            await navigator.share({ files: [shareFile], title: filename });
+            setStatus('共有シートを開いたにょ🐮 「ファイルに保存」を選んでね', 'ok');
+            return;
+          } catch (err) {
+            if (err && err.name === 'AbortError') {
+              setStatus('保存をキャンセルしたにょ🐮', 'warn');
+              return;
+            }
+          }
+        }
         const reader = new FileReader();
         reader.onload = ev => {
           const dataURL = ev.target.result;
-          // 現在のページを画像ページに置き換えてそのまま長押し保存できるようにする
           const w = window.open('', '_blank');
           if (w) {
             w.document.write(
@@ -1760,11 +1773,10 @@ function saveCanvasAsPng(canvas, filename) {
               'img{max-width:100%;max-height:80vh;border-radius:8px;display:block}' +
               'p{color:#fff;font-size:15px;text-align:center;line-height:1.6}' +
               'p b{color:#7cffb2}</style></head>' +
-              '<body><img src="' + dataURL + '"><p>画像を<b>長押し</b> → 「<b>写真に追加</b>」で保存にょ🐮✋</p></body></html>'
+              '<body><img src="' + dataURL + '"><p>共有シートが使えない環境です。画像を<b>長押し</b>して保存してください。</p></body></html>'
             );
             w.document.close();
           } else {
-            // ポップアップがブロックされた場合は現在のタブで画像を表示
             document.open();
             document.write(
               '<!DOCTYPE html><html><head>' +
@@ -1773,15 +1785,14 @@ function saveCanvasAsPng(canvas, filename) {
               '<style>*{margin:0;padding:0}body{background:#111;display:flex;flex-direction:column;align-items:center;padding:16px;gap:16px;font-family:sans-serif}' +
               'img{max-width:100%}p{color:#fff;font-size:15px;text-align:center}a{color:#7cffb2;display:block;margin-top:8px}</style></head>' +
               '<body><img src="' + dataURL + '">' +
-              '<p>画像を長押し → 「写真に追加」で保存にょ🐮✋<br><a href="javascript:history.back()">← 戻る</a></p></body></html>'
+              '<p>共有シートが使えない環境です。画像を長押しして保存してください。<br><a href="javascript:history.back()">← 戻る</a></p></body></html>'
             );
             document.close();
           }
-          URL.revokeObjectURL(url);
         };
         reader.readAsDataURL(blob);
       } else {
-        // PC・Android：Blobダウンロード
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;

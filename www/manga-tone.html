@@ -1650,11 +1650,10 @@
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       try {
-        canvas.toBlob(blob => {
+        canvas.toBlob(async blob => {
           if (!blob) { stState.textContent = '保存エラー: Blob生成失敗'; return; }
           const useNativeSave = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveImage);
           if (useNativeSave) {
-            // ネイティブアプリ（iOS/macOS）→ ダイアログで保存
             const reader = new FileReader();
             reader.onload = ev => {
               window.webkit.messageHandlers.saveImage.postMessage({ filename, dataURL: ev.target.result });
@@ -1664,12 +1663,23 @@
             return;
           }
           if (isIOS) {
-            // iOS Safari → 長押しモーダル
+            const shareFile = new File([blob], filename, { type: 'image/png' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+              try {
+                await navigator.share({ files: [shareFile], title: filename });
+                stState.textContent = '共有シートを開きました。「ファイルに保存」を選んでください';
+                return;
+              } catch (err) {
+                if (err && err.name === 'AbortError') {
+                  stState.textContent = '保存をキャンセルしました';
+                  return;
+                }
+              }
+            }
             const reader = new FileReader();
             reader.onload = ev => { showSaveModal(ev.target.result, filename); };
             reader.readAsDataURL(blob);
           } else {
-            // PC・Android → 直接DL
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url; a.download = filename;
@@ -1695,14 +1705,14 @@
   `;
 
       const title = document.createElement('div');
-      title.textContent = '画像を長押しして保存にょ🐮✋';
+      title.textContent = '共有シート非対応です';
       title.style.cssText = `
     font-family:'Share Tech Mono',monospace;color:#00d4ff;
     font-size:14px;letter-spacing:1px;text-align:center;
   `;
 
       const sub = document.createElement('div');
-      sub.textContent = '「写真に追加」または「ファイルに保存」を選んでね';
+      sub.textContent = '画像を長押しして保存してください';
       sub.style.cssText = `font-size:12px;color:#888899;text-align:center;`;
 
       const fname = document.createElement('div');
@@ -1730,7 +1740,7 @@
 
       overlay.append(title, sub, fname, img, closeBtn);
       document.body.appendChild(overlay);
-      stState.textContent = 'iPhoneで長押し保存してにょ🐮';
+      stState.textContent = '共有シート非対応のため長押し保存です';
     }
 
     document.getElementById('btn-reset').addEventListener('click', () => {

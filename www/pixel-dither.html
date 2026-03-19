@@ -711,21 +711,27 @@ function saveCanvasAsPng(canvas, filename) {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   try {
-    canvas.toBlob(blob => {
+    canvas.toBlob(async blob => {
       if (!blob) { alert('保存エラー: Blob生成失敗'); return; }
       const useNativeSave = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveImage);
       if (useNativeSave) {
-        // ネイティブアプリ（iOS/macOS）→ ダイアログで保存
         const reader = new FileReader();
         reader.onload = ev => {
           window.webkit.messageHandlers.saveImage.postMessage({ filename, dataURL: ev.target.result });
-          URL.revokeObjectURL(blob);
         };
         reader.readAsDataURL(blob);
         return;
       }
       if (isIOS) {
-        // iOS Safari → 長押しモーダル
+        const shareFile = new File([blob], filename, { type: 'image/png' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+          try {
+            await navigator.share({ files: [shareFile], title: filename });
+            return;
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+          }
+        }
         const reader = new FileReader();
         reader.onload = ev => {
           const dataURL = ev.target.result;
@@ -735,7 +741,7 @@ function saveCanvasAsPng(canvas, filename) {
           modal.id = 'saveModal';
           modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;box-sizing:border-box;';
           modal.innerHTML = `
-            <div style="color:#0ff;font-family:monospace;font-size:13px;text-align:center;">📱 画像を長押し →「写真に追加」で保存</div>
+            <div style="color:#0ff;font-family:monospace;font-size:13px;text-align:center;">共有シート非対応です。画像を長押しして保存してください。</div>
             <img src="${dataURL}" style="max-width:88vw;max-height:65vh;image-rendering:pixelated;border:2px solid #333;-webkit-touch-callout:default;">
             <button onclick="document.getElementById('saveModal').remove()"
               style="padding:10px 28px;background:#1a1a2e;color:#e0e0f0;border:1px solid #2a2a3a;border-radius:4px;cursor:pointer;font-family:monospace;font-size:13px;">✕ 閉じる</button>
@@ -746,7 +752,6 @@ function saveCanvasAsPng(canvas, filename) {
         };
         reader.readAsDataURL(blob);
       } else {
-        // PC・Android → 直接DL
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = filename;
