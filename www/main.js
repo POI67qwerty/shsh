@@ -472,23 +472,27 @@ function applyEdge(gray, out, W, H) {
 function applyLineWidthDilation(out, W, H) {
   const r = parseInt(sliderLineWidth.value);
   if (r <= 10) return;
-  const ri = Math.round((r - 10) / 10);
+  const radius = (r - 10) / 10; // 実数半径（1.1→0.1、1.2→0.2...）
+  const ri = Math.ceil(radius);  // 切り上げ整数半径
   if (ri < 1) return;
-  // 横方向膨張
-  const tmp = new Uint8Array(W * H);
+
+  // サブピクセル膨張：distance² <= radius² なら膨張する
+  // 行列分離dilationだと真円にならないので円形マスクを使う
+  const r2 = radius * radius + 0.01; // 少し余裕を持たせる
+  const src = out.slice();
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      if (out[y * W + x] !== 0) continue; // 黒のみ処理
-      const x0 = Math.max(0, x - ri), x1 = Math.min(W - 1, x + ri);
-      for (let nx = x0; nx <= x1; nx++) tmp[y * W + nx] = 1;
-    }
-  }
-  // 縦方向膨張
-  for (let x = 0; x < W; x++) {
-    for (let y = 0; y < H; y++) {
-      if (!tmp[y * W + x]) continue;
-      const y0 = Math.max(0, y - ri), y1 = Math.min(H - 1, y + ri);
-      for (let ny = y0; ny <= y1; ny++) out[ny * W + x] = 0;
+      if (out[y * W + x] === 0) continue; // 既に黒はスキップ
+      // 周囲ri内に黒ピクセルがあり、かつ距離がradius以内なら黒にする
+      let found = false;
+      for (let dy = -ri; dy <= ri && !found; dy++) {
+        for (let dx = -ri; dx <= ri && !found; dx++) {
+          if (dx * dx + dy * dy > r2) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < W && ny >= 0 && ny < H && src[ny * W + nx] === 0) found = true;
+        }
+      }
+      if (found) out[y * W + x] = 0;
     }
   }
 }
