@@ -1382,7 +1382,7 @@ renderPalette();
     lb.appendChild(bar);
 
     lbImg = document.createElement('canvas');
-    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;transform-origin:0 0;';
+    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;left:0;top:0;transform-origin:0 0;';
     lb.appendChild(lbImg);
 
     // 背景クリックで閉じる
@@ -1453,6 +1453,10 @@ renderPalette();
       prevTouches = Array.from(e.touches);
     });
 
+    window.addEventListener('resize', () => {
+      if (lb && lb.style.display !== 'none') fitLb();
+    });
+
     document.body.appendChild(lb);
   }
 
@@ -1460,11 +1464,17 @@ renderPalette();
     buildLightbox();
     lbImg.width = srcCanvas.width;
     lbImg.height = srcCanvas.height;
+    lbImg.style.width = srcCanvas.width + 'px';
+    lbImg.style.height = srcCanvas.height + 'px';
     const lbCtx = lbImg.getContext('2d');
     lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
     lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
     lb.style.display = 'flex';
-    requestAnimationFrame(() => requestAnimationFrame(fitLb));
+    lbState.zoom = 1;
+    lbState.panX = 0;
+    lbState.panY = 0;
+    applyLbTransform();
+    setTimeout(fitLb, 0);
   }
 
   function closeLb() {
@@ -1473,13 +1483,16 @@ renderPalette();
   }
 
   function fitLb() {
-    const toolbarH = 56;
-    const pad = 24;
-    const pw = Math.max(0, lb.clientWidth - pad * 2);
-    const ph = Math.max(0, lb.clientHeight - toolbarH - pad * 2);
-    const z = Math.min(pw / lbImg.width, ph / lbImg.height);
-    lbState.panX = (lb.clientWidth - lbImg.width * z) / 2;
-    lbState.panY = toolbarH + (lb.clientHeight - toolbarH - lbImg.height * z) / 2;
+    const toolbar = lb.firstElementChild;
+    const toolbarH = toolbar ? toolbar.getBoundingClientRect().height : 56;
+    const pad = 12;
+    const viewW = window.innerWidth;
+    const viewH = window.innerHeight;
+    const pw = Math.max(1, viewW - pad * 2);
+    const ph = Math.max(1, viewH - toolbarH - pad * 2);
+    const z = Math.max(0.1, Math.min(pw / lbImg.width, ph / lbImg.height));
+    lbState.panX = Math.round((viewW - lbImg.width * z) / 2);
+    lbState.panY = Math.round(toolbarH + (viewH - toolbarH - lbImg.height * z) / 2);
     lbZoom(z);
   }
 
