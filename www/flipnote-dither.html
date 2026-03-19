@@ -1339,7 +1339,7 @@ renderPalette();
   let lb = null;
   let lbImg = null;
   let lbZoomLabel = null;
-  let lbState = { zoom: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
+  let lbState = { zoom: 1, panX: 0, panY: 0, centerX: 0, centerY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
   let prevTouches = [];
 
   function mkBtn(label, color) {
@@ -1382,7 +1382,7 @@ renderPalette();
     lb.appendChild(bar);
 
     lbImg = document.createElement('canvas');
-    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;left:0;top:0;transform-origin:0 0;';
+    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;transform-origin:center center;max-width:none;max-height:none;width:auto;height:auto;';
     lb.appendChild(lbImg);
 
     // 背景クリックで閉じる
@@ -1464,8 +1464,6 @@ renderPalette();
     buildLightbox();
     lbImg.width = srcCanvas.width;
     lbImg.height = srcCanvas.height;
-    lbImg.style.width = srcCanvas.width + 'px';
-    lbImg.style.height = srcCanvas.height + 'px';
     const lbCtx = lbImg.getContext('2d');
     lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
     lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
@@ -1491,8 +1489,10 @@ renderPalette();
     const pw = Math.max(1, viewW - pad * 2);
     const ph = Math.max(1, viewH - toolbarH - pad * 2);
     const z = Math.max(0.1, Math.min(pw / lbImg.width, ph / lbImg.height));
-    lbState.panX = Math.round((viewW - lbImg.width * z) / 2);
-    lbState.panY = Math.round(toolbarH + (viewH - toolbarH - lbImg.height * z) / 2);
+    lbState.centerX = Math.round(viewW / 2);
+    lbState.centerY = Math.round(toolbarH + (viewH - toolbarH) / 2);
+    lbState.panX = 0;
+    lbState.panY = 0;
     lbZoom(z);
   }
 
@@ -1504,15 +1504,20 @@ renderPalette();
 
   function lbZoomAt(z, ox, oy) {
     const old = lbState.zoom;
-    lbState.zoom = Math.max(0.1, Math.min(16, z));
-    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
-    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
+    const next = Math.max(0.1, Math.min(16, z));
+    const imgX = (ox - lbState.centerX - lbState.panX) / old + lbImg.width / 2;
+    const imgY = (oy - lbState.centerY - lbState.panY) / old + lbImg.height / 2;
+    lbState.zoom = next;
+    lbState.panX = ox - lbState.centerX - (imgX - lbImg.width / 2) * next;
+    lbState.panY = oy - lbState.centerY - (imgY - lbImg.height / 2) * next;
     applyLbTransform();
     if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
   }
 
   function applyLbTransform() {
-    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
+    lbImg.style.left = lbState.centerX + 'px';
+    lbImg.style.top = lbState.centerY + 'px';
+    lbImg.style.transform = `translate(-50%, -50%) translate(${lbState.panX}px, ${lbState.panY}px) scale(${lbState.zoom})`;
   }
 
   function attachLbTrigger(holderId) {
