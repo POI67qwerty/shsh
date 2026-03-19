@@ -1458,11 +1458,13 @@ renderPalette();
 
   function openLb(srcCanvas) {
     buildLightbox();
-    lbImg.width  = srcCanvas.width;
+    lbImg.width = srcCanvas.width;
     lbImg.height = srcCanvas.height;
-    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
-    lb.style.display = 'block';
-    fitLb();
+    const lbCtx = lbImg.getContext('2d');
+    lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
+    lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
+    lb.style.display = 'flex';
+    requestAnimationFrame(fitLb);
   }
 
   function closeLb() {
@@ -1471,10 +1473,13 @@ renderPalette();
   }
 
   function fitLb() {
-    const pw = lb.clientWidth, ph = lb.clientHeight - 56;
-    const z = Math.min(1, (pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
-    lbState.panX = (pw - lbImg.width  * z) / 2;
-    lbState.panY = (ph - lbImg.height * z) / 2 + 56;
+    const toolbarH = 56;
+    const pad = 24;
+    const pw = Math.max(0, lb.clientWidth - pad * 2);
+    const ph = Math.max(0, lb.clientHeight - toolbarH - pad * 2);
+    const z = Math.min(pw / lbImg.width, ph / lbImg.height);
+    lbState.panX = (lb.clientWidth - lbImg.width * z) / 2;
+    lbState.panY = toolbarH + (lb.clientHeight - toolbarH - lbImg.height * z) / 2;
     lbZoom(z);
   }
 

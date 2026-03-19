@@ -884,11 +884,13 @@ renderPalette();
 
   function openLb(srcCanvas) {
     buildLightbox();
-    lbImg.width  = srcCanvas.width;
+    lbImg.width = srcCanvas.width;
     lbImg.height = srcCanvas.height;
-    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
-    lb.style.display = 'block';
-    fitLb();
+    const lbCtx = lbImg.getContext('2d');
+    lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
+    lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
+    lb.style.display = 'flex';
+    requestAnimationFrame(fitLb);
   }
 
   function closeLb() {
@@ -897,10 +899,13 @@ renderPalette();
   }
 
   function fitLb() {
-    const pw = lb.clientWidth, ph = lb.clientHeight - 56;
-    const z = Math.min(1, (pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
-    lbState.panX = (pw - lbImg.width  * z) / 2;
-    lbState.panY = (ph - lbImg.height * z) / 2 + 56;
+    const toolbarH = 56;
+    const pad = 24;
+    const pw = Math.max(0, lb.clientWidth - pad * 2);
+    const ph = Math.max(0, lb.clientHeight - toolbarH - pad * 2);
+    const z = Math.min(pw / lbImg.width, ph / lbImg.height);
+    lbState.panX = (lb.clientWidth - lbImg.width * z) / 2;
+    lbState.panY = toolbarH + (lb.clientHeight - toolbarH - lbImg.height * z) / 2;
     lbZoom(z);
   }
 
@@ -943,156 +948,5 @@ renderPalette();
 })();
 </script>
 <script src="pwa.js"></script>
-</body>
-</html>
-  let lb = null;
-  let lbImg = null;
-  let lbState = { zoom: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
-
-  function buildLightbox() {
-    if (lb) return;
-    lb = document.createElement('div');
-    lb.id = 'lb-overlay';
-    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;';
-
-    const bar = document.createElement('div');
-    bar.style.cssText = 'position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,0,0,.6);z-index:1;';
-    bar.innerHTML = `
-      <span style="font-family:'Courier New',monospace;font-size:11px;color:#888;letter-spacing:.1em;">ZOOM: <span id="lb-zoom-val">100%</span></span>
-      <button id="lb-zin"  style="${btnStyle()}">＋</button>
-      <button id="lb-zout" style="${btnStyle()}">－</button>
-      <button id="lb-fit"  style="${btnStyle()}">FIT</button>
-      <span style="flex:1"></span>
-      <button id="lb-close" style="${btnStyle('#ff5a5a')}">✕ 閉じる</button>
-    `;
-    lb.appendChild(bar);
-
-    lbImg = document.createElement('canvas');
-    lbImg.style.cssText = 'image-rendering:pixelated;image-rendering:crisp-edges;cursor:grab;position:absolute;transform-origin:0 0;';
-    lb.appendChild(lbImg);
-
-    lb.querySelector('#lb-close').addEventListener('click', closeLb);
-    lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
-    lb.querySelector('#lb-zin').addEventListener('click',  () => lbZoom(lbState.zoom * 1.3));
-    lb.querySelector('#lb-zout').addEventListener('click', () => lbZoom(lbState.zoom / 1.3));
-    lb.querySelector('#lb-fit').addEventListener('click',  fitLb);
-
-    lb.addEventListener('wheel', e => {
-      e.preventDefault();
-      const r = lb.getBoundingClientRect();
-      lbZoomAt(lbState.zoom * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX - r.left, e.clientY - r.top);
-    }, { passive: false });
-
-    lb.addEventListener('mousedown', e => {
-      if (e.target.tagName === 'BUTTON') return;
-      lbState.dragging = true; lbState.sx = e.clientX; lbState.sy = e.clientY;
-      lbState.spx = lbState.panX; lbState.spy = lbState.panY;
-      lbImg.style.cursor = 'grabbing';
-    });
-    document.addEventListener('mousemove', e => {
-      if (!lbState.dragging) return;
-      lbState.panX = lbState.spx + (e.clientX - lbState.sx);
-      lbState.panY = lbState.spy + (e.clientY - lbState.sy);
-      applyLbTransform();
-    });
-    document.addEventListener('mouseup', () => { lbState.dragging = false; if (lbImg) lbImg.style.cursor = 'grab'; });
-
-    let touches = [];
-    lb.addEventListener('touchstart', e => {
-      e.preventDefault();
-      touches = Array.from(e.touches);
-      if (touches.length === 1) {
-        lbState.dragging = true; lbState.sx = touches[0].clientX; lbState.sy = touches[0].clientY;
-        lbState.spx = lbState.panX; lbState.spy = lbState.panY;
-      }
-    }, { passive: false });
-    lb.addEventListener('touchmove', e => {
-      e.preventDefault();
-      const t = Array.from(e.touches);
-      if (t.length === 1 && lbState.dragging) {
-        lbState.panX = lbState.spx + (t[0].clientX - lbState.sx);
-        lbState.panY = lbState.spy + (t[0].clientY - lbState.sy);
-        applyLbTransform();
-      } else if (t.length === 2) {
-        lbState.dragging = false;
-        const prevDist = Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
-        const newDist  = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-        const r = lb.getBoundingClientRect();
-        const mx = (t[0].clientX + t[1].clientX) / 2 - r.left;
-        const my = (t[0].clientY + t[1].clientY) / 2 - r.top;
-        lbZoomAt(lbState.zoom * (newDist / prevDist), mx, my);
-        touches = t;
-      }
-    }, { passive: false });
-    lb.addEventListener('touchend', e => { if (e.touches.length === 0) lbState.dragging = false; });
-
-    document.body.appendChild(lb);
-  }
-
-  function btnStyle(color) {
-    const c = color || '#7a7a90';
-    return `padding:4px 12px;background:transparent;border:1px solid ${c};color:${c};font-family:'Courier New',monospace;font-size:11px;border-radius:4px;cursor:pointer;-webkit-tap-highlight-color:transparent;`;
-  }
-
-  function openLb(srcCanvas) {
-    buildLightbox();
-    lbImg.width  = srcCanvas.width;
-    lbImg.height = srcCanvas.height;
-    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
-    lb.style.display = 'flex';
-    fitLb();
-  }
-
-  function closeLb() {
-    if (lb) lb.style.display = 'none';
-  }
-
-  function fitLb() {
-    const pw = lb.clientWidth, ph = lb.clientHeight - 50;
-    const z = Math.min(1, (pw - 40) / lbImg.width, (ph - 40) / lbImg.height);
-    lbState.panX = (pw - lbImg.width  * z) / 2;
-    lbState.panY = (ph - lbImg.height * z) / 2 + 50;
-    lbZoom(z);
-  }
-
-  function lbZoom(z) {
-    lbState.zoom = Math.max(0.1, Math.min(16, z));
-    applyLbTransform();
-    document.getElementById('lb-zoom-val').textContent = Math.round(lbState.zoom * 100) + '%';
-  }
-
-  function lbZoomAt(z, ox, oy) {
-    const old = lbState.zoom;
-    lbState.zoom = Math.max(0.1, Math.min(16, z));
-    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
-    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
-    applyLbTransform();
-    document.getElementById('lb-zoom-val').textContent = Math.round(lbState.zoom * 100) + '%';
-  }
-
-  function applyLbTransform() {
-    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
-  }
-
-  function attachLbTrigger(wrapperId) {
-    const wrapper = document.getElementById(wrapperId);
-    if (!wrapper) return;
-    const hint = document.createElement('div');
-    hint.style.cssText = 'position:absolute;bottom:6px;right:8px;font-size:10px;color:rgba(255,255,255,.35);font-family:monospace;pointer-events:none;letter-spacing:.05em;z-index:2;';
-    hint.textContent = '🔍 タップで拡大';
-    wrapper.style.position = 'relative';
-    wrapper.appendChild(hint);
-
-    wrapper.addEventListener('click', e => {
-      if (e.target.tagName === 'BUTTON') return;
-      const c = document.getElementById(CANVAS_ID);
-      if (!c || c.style.display === 'none') return;
-      openLb(c);
-    });
-  }
-
-  attachLbTrigger('outputWrapper');
-})();
-</script>
 </body>
 </html>
