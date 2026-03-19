@@ -209,6 +209,7 @@ updateSliderVisibility();
 
 // 線幅修正モードのセレクト変更でも再処理
 document.getElementById('lineWidthMode').addEventListener('change', scheduleProcess);
+invertBtn.addEventListener('click', () => {
 invert = !invert;
 invertBtn.textContent = invert ? 'ON' : 'OFF';
 invertBtn.style.borderColor = invert ? 'var(--accent)' : 'var(--accent2)';
@@ -219,6 +220,11 @@ scheduleProcess();
 // ============================================================
 // ファイル読み込み
 // ============================================================
+uploadZone.addEventListener('click', e => {
+  if (e.target === fileInput) return;
+  e.preventDefault();
+  fileInput.click();
+});
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
 uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); loadFile(e.dataTransfer.files[0]); });

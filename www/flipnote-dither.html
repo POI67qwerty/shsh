@@ -1354,7 +1354,7 @@ renderPalette();
     if (lb) return;
     lb = document.createElement('div');
     lb.id = 'lb-overlay';
-    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;display:none;';
 
     // ツールバー（DOM APIで作成→イベント干渉なし）
     const bar = document.createElement('div');
@@ -1464,7 +1464,7 @@ renderPalette();
     lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
     lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
     lb.style.display = 'flex';
-    requestAnimationFrame(fitLb);
+    requestAnimationFrame(() => requestAnimationFrame(fitLb));
   }
 
   function closeLb() {

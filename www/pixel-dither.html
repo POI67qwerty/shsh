@@ -786,7 +786,7 @@ renderPalette();
     if (lb) return;
     lb = document.createElement('div');
     lb.id = 'lb-overlay';
-    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;display:none;';
 
     const bar = document.createElement('div');
     bar.style.cssText = 'position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.7);z-index:2;';
@@ -890,7 +890,7 @@ renderPalette();
     lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
     lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
     lb.style.display = 'flex';
-    requestAnimationFrame(fitLb);
+    requestAnimationFrame(() => requestAnimationFrame(fitLb));
   }
 
   function closeLb() {
