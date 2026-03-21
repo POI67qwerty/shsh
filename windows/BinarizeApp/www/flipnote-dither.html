@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>うごメモ風 トーン変換</title>
+<meta name="theme-color" content="#1a6fb5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="かこあぷり">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+1+Code:wght@400;700&display=swap');
 
@@ -1263,11 +1269,10 @@ function saveCanvasAsPng(canvas, filename) {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   try {
-    canvas.toBlob(blob => {
+    canvas.toBlob(async blob => {
       if (!blob) { alert('保存エラー: Blob生成失敗'); return; }
       const useNativeSave = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveImage);
       if (useNativeSave) {
-        // ネイティブアプリ（iOS/macOS）→ ダイアログで保存
         const reader = new FileReader();
         reader.onload = ev => {
           window.webkit.messageHandlers.saveImage.postMessage({ filename, dataURL: ev.target.result });
@@ -1276,7 +1281,15 @@ function saveCanvasAsPng(canvas, filename) {
         return;
       }
       if (isIOS) {
-        // iOS Safari → 長押しモーダル
+        const shareFile = new File([blob], filename, { type: 'image/png' });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+          try {
+            await navigator.share({ files: [shareFile], title: filename });
+            return;
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+          }
+        }
         const reader = new FileReader();
         reader.onload = ev => {
           const dataUrl = ev.target.result;
@@ -1290,7 +1303,7 @@ function saveCanvasAsPng(canvas, filename) {
             'gap:14px;padding:20px;box-sizing:border-box'
           ].join(';');
           modal.innerHTML = `
-            <div style="color:#9ef;font-family:monospace;font-size:13px;text-align:center;line-height:1.8;">📱 画像を長押し →「写真に追加」で保存</div>
+            <div style="color:#9ef;font-family:monospace;font-size:13px;text-align:center;line-height:1.8;">共有シート非対応です。画像を長押しして保存してください。</div>
             <img src="${dataUrl}"
               style="max-width:88vw;max-height:65vh;image-rendering:pixelated;
                      border:3px solid #555;border-radius:4px;display:block;
@@ -1307,7 +1320,6 @@ function saveCanvasAsPng(canvas, filename) {
         };
         reader.readAsDataURL(blob);
       } else {
-        // PC・Android → 直接DL
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = filename;
@@ -1327,7 +1339,7 @@ renderPalette();
   let lb = null;
   let lbImg = null;
   let lbZoomLabel = null;
-  let lbState = { zoom: 1, panX: 0, panY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
+  let lbState = { zoom: 1, panX: 0, panY: 0, centerX: 0, centerY: 0, dragging: false, sx: 0, sy: 0, spx: 0, spy: 0 };
   let prevTouches = [];
 
   function mkBtn(label, color) {
@@ -1342,7 +1354,7 @@ renderPalette();
     if (lb) return;
     lb = document.createElement('div');
     lb.id = 'lb-overlay';
-    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9000;user-select:none;-webkit-user-select:none;display:none;';
 
     // ツールバー（DOM APIで作成→イベント干渉なし）
     const bar = document.createElement('div');
@@ -1370,7 +1382,7 @@ renderPalette();
     lb.appendChild(bar);
 
     lbImg = document.createElement('canvas');
-    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;transform-origin:0 0;';
+    lbImg.style.cssText = 'image-rendering:pixelated;cursor:grab;position:absolute;transform-origin:center center;';
     lb.appendChild(lbImg);
 
     // 背景クリックで閉じる
@@ -1441,16 +1453,26 @@ renderPalette();
       prevTouches = Array.from(e.touches);
     });
 
+    window.addEventListener('resize', () => {
+      if (lb && lb.style.display !== 'none') fitLb();
+    });
+
     document.body.appendChild(lb);
   }
 
   function openLb(srcCanvas) {
     buildLightbox();
-    lbImg.width  = srcCanvas.width;
+    lbImg.width = srcCanvas.width;
     lbImg.height = srcCanvas.height;
-    lbImg.getContext('2d').drawImage(srcCanvas, 0, 0);
-    lb.style.display = 'block';
-    requestAnimationFrame(() => requestAnimationFrame(() => fitLb()));
+    const lbCtx = lbImg.getContext('2d');
+    lbCtx.clearRect(0, 0, lbImg.width, lbImg.height);
+    lbCtx.drawImage(srcCanvas, 0, 0, lbImg.width, lbImg.height);
+    lb.style.display = 'flex';
+    lbState.zoom = 1;
+    lbState.panX = 0;
+    lbState.panY = 0;
+    applyLbTransform();
+    setTimeout(fitLb, 0);
   }
 
   function closeLb() {
@@ -1459,12 +1481,18 @@ renderPalette();
   }
 
   function fitLb() {
-    const pw = lb.clientWidth || window.innerWidth;
-    const ph = (lb.clientHeight || window.innerHeight) - 56;
-    // Math.min(1,...) を外して画面サイズに合わせて拡大もする
-    const z = Math.min((pw - 32) / lbImg.width, (ph - 32) / lbImg.height);
-    lbState.panX = (pw - lbImg.width  * z) / 2;
-    lbState.panY = (ph - lbImg.height * z) / 2 + 56;
+    const toolbar = lb.firstElementChild;
+    const toolbarH = toolbar ? toolbar.getBoundingClientRect().height : 56;
+    const pad = 12;
+    const viewW = window.innerWidth;
+    const viewH = window.innerHeight;
+    const pw = Math.max(1, viewW - pad * 2);
+    const ph = Math.max(1, viewH - toolbarH - pad * 2);
+    const z = Math.max(0.1, Math.min(pw / lbImg.width, ph / lbImg.height));
+    lbState.centerX = Math.round(viewW / 2);
+    lbState.centerY = Math.round(toolbarH + (viewH - toolbarH) / 2);
+    lbState.panX = 0;
+    lbState.panY = 0;
     lbZoom(z);
   }
 
@@ -1476,15 +1504,20 @@ renderPalette();
 
   function lbZoomAt(z, ox, oy) {
     const old = lbState.zoom;
-    lbState.zoom = Math.max(0.1, Math.min(16, z));
-    lbState.panX = ox - (ox - lbState.panX) * (lbState.zoom / old);
-    lbState.panY = oy - (oy - lbState.panY) * (lbState.zoom / old);
+    const next = Math.max(0.1, Math.min(16, z));
+    const imgX = (ox - lbState.centerX - lbState.panX) / old + lbImg.width / 2;
+    const imgY = (oy - lbState.centerY - lbState.panY) / old + lbImg.height / 2;
+    lbState.zoom = next;
+    lbState.panX = ox - lbState.centerX - (imgX - lbImg.width / 2) * next;
+    lbState.panY = oy - lbState.centerY - (imgY - lbImg.height / 2) * next;
     applyLbTransform();
     if (lbZoomLabel) lbZoomLabel.textContent = 'ZOOM: ' + Math.round(lbState.zoom * 100) + '%';
   }
 
   function applyLbTransform() {
-    lbImg.style.transform = `translate(${lbState.panX}px,${lbState.panY}px) scale(${lbState.zoom})`;
+    lbImg.style.left = lbState.centerX + 'px';
+    lbImg.style.top = lbState.centerY + 'px';
+    lbImg.style.transform = `translate(-50%, -50%) translate(${lbState.panX}px, ${lbState.panY}px) scale(${lbState.zoom})`;
   }
 
   function attachLbTrigger(holderId) {
@@ -1506,5 +1539,6 @@ renderPalette();
   attachLbTrigger('outHolder');
 })();
 </script>
+<script src="pwa.js"></script>
 </body>
 </html>
