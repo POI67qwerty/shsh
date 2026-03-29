@@ -24,8 +24,8 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Publish (Single File)
-        run: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=false
+      - name: Publish
+        run: dotnet publish -c Release -r win-x64 -p:SelfContained=false
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
