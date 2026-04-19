@@ -785,12 +785,22 @@ function applyColorToFill(bfsMask, W, H, col, alpha) {
   const fd_data = ctxFill.getImageData(0, 0, W, H), fd = fd_data.data;
   for (let i = 0; i < W * H; i++) {
     if (!bfsMask[i]) continue;
-    const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
-    if (ao < 0.001) { fd[i * 4 + 3] = 0; continue; }
-    fd[i * 4] = Math.round((col.r * a1 + fd[i * 4] * a0 * (1 - a1)) / ao);
-    fd[i * 4 + 1] = Math.round((col.g * a1 + fd[i * 4 + 1] * a0 * (1 - a1)) / ao);
-    fd[i * 4 + 2] = Math.round((col.b * a1 + fd[i * 4 + 2] * a0 * (1 - a1)) / ao);
-    fd[i * 4 + 3] = Math.round(ao * 255);
+    // 既存の色を完全に上書き（自動塗り分け後の色変更に対応）
+    if (alpha >= 0.999) {
+      // 不透明なら直接書き込み（下の色を無視して上書き）
+      fd[i * 4] = col.r;
+      fd[i * 4 + 1] = col.g;
+      fd[i * 4 + 2] = col.b;
+      fd[i * 4 + 3] = 255;
+    } else {
+      // 半透明の場合のみアルファブレンド
+      const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
+      if (ao < 0.001) { fd[i * 4 + 3] = 0; continue; }
+      fd[i * 4] = Math.round((col.r * a1 + fd[i * 4] * a0 * (1 - a1)) / ao);
+      fd[i * 4 + 1] = Math.round((col.g * a1 + fd[i * 4 + 1] * a0 * (1 - a1)) / ao);
+      fd[i * 4 + 2] = Math.round((col.b * a1 + fd[i * 4 + 2] * a0 * (1 - a1)) / ao);
+      fd[i * 4 + 3] = Math.round(ao * 255);
+    }
   }
   ctxFill.putImageData(fd_data, 0, 0);
   renderMerge();
@@ -888,7 +898,7 @@ let _lastTap = 0;
 // PCドラッグパン用
 let _mousePan = false, _panStartX = 0, _panStartY = 0, _panScrollX = 0, _panScrollY = 0;
 let _panMode = false;
-let _fillExpandEnabled = false;
+let _fillExpandEnabled = true;  // 線画埋めはデフォルトON（保存時に線の下まで塗りが入る）
 
 const resultBox = document.getElementById('resultBox');
 
@@ -1177,13 +1187,11 @@ function executeLasso() {
     }
   }
 
-  // ③ バリア = 線画膨張 OR ラッソ輪郭 OR 既存塗り（消しゴムモード除く）
-  const includeFill = (mode !== 'erase');
-  const fillData = includeFill ? ctxFill.getImageData(0, 0, W, H).data : null;
+  // ③ バリア = 線画膨張 + ラッソ輪郭線のみ
+  //    既存の塗りはバリアにしない → 自動塗り分け後の色上書きに対応
   const barrier = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
-    barrier[i] = lineBarrier[i] || lassoEdge[i]
-      || (fillData && fillData[i * 4 + 3] > 10 ? 1 : 0);
+    barrier[i] = lineBarrier[i] || lassoEdge[i];
   }
 
   // ④ シード = ラッソ内部の重心1点（バリア上なら近傍を探す）
@@ -1253,9 +1261,8 @@ function executeBucket(pos) {
   // ① 線をgapR膨張して隙間とじ線バリアを作る
   const lineBarrier = gapR > 0 ? dilateBinary(lineMap, W, H, gapR) : lineMap;
 
-  // 【クリスタ方式】消しゴム以外は既存の塗りピクセルもバリアに含める
-  const includeFill = (mode !== 'erase');
-  const barrier = buildFillBarrier(lineBarrier, W, H, includeFill);
+  // 線画膨張のみをバリアにする（既存塗りはバリアにしない→色上書き対応）
+  const barrier = lineBarrier;
 
   // ② シード設定（クリックした点がバリア上なら近傍で探す）
   const seedIdx = sy * W + sx;
@@ -1901,13 +1908,19 @@ if (btnPanToggle) btnPanToggle.addEventListener('click', () => {
   btnPanToggle.textContent = _panMode ? '✋ PAN ON' : '✋ PAN';
   updateCanvasCursor();
 });
-if (btnFillExpandToggle) btnFillExpandToggle.addEventListener('click', () => {
-  _fillExpandEnabled = !_fillExpandEnabled;
-  btnFillExpandToggle.textContent = _fillExpandEnabled ? '線画埋め: ON' : '線画埋め: OFF';
-  btnFillExpandToggle.style.borderColor = _fillExpandEnabled ? 'var(--accent)' : 'var(--border)';
-  btnFillExpandToggle.style.color = _fillExpandEnabled ? 'var(--accent)' : '';
-  renderMerge();
-});
+// 線画埋めボタン：デフォルトON
+if (btnFillExpandToggle) {
+  btnFillExpandToggle.textContent = '線画埋め: ON';
+  btnFillExpandToggle.style.borderColor = 'var(--accent)';
+  btnFillExpandToggle.style.color = 'var(--accent)';
+  btnFillExpandToggle.addEventListener('click', () => {
+    _fillExpandEnabled = !_fillExpandEnabled;
+    btnFillExpandToggle.textContent = _fillExpandEnabled ? '線画埋め: ON' : '線画埋め: OFF';
+    btnFillExpandToggle.style.borderColor = _fillExpandEnabled ? 'var(--accent)' : 'var(--border)';
+    btnFillExpandToggle.style.color = _fillExpandEnabled ? 'var(--accent)' : '';
+    renderMerge();
+  });
+}
 
 btnDownload.addEventListener('click', () => {
   if (!srcImage) { setStatus('まず画像を読み込んでにょ🐮', 'err'); return; }
@@ -2175,42 +2188,64 @@ function buildLineAlphaCanvas() {
 }
 
 // ============================================================
-// 塗りの下地を線画の内側まで広げたキャンバスを作る
-// 線画ピクセル（黒）に隣接する塗り色をにじませて埋める
+// 塗りのみ保存用キャンバスを作る（クリスタ方式）
+// BFS波状膨張で塗り済みピクセルからexpandR px外側に色を広げる
+// → 線画ピクセルの下まで完全に色を埋めるため、
+//   線画を非表示にしても隙間ができない
 // ============================================================
 function buildFillExpandedCanvas(expandR = 3) {
   const W = canvasFill.width, H = canvasFill.height;
+  const origData = ctxFill.getImageData(0, 0, W, H).data;
+
+  // BFS距離膨張：塗り済みピクセルからexpandR歩まで外側に色を広げる
+  const bfsQueue = new Int32Array(W * H);
+  let bfsHead = 0, bfsTail = 0;
+  const srcOf = new Int32Array(W * H).fill(-1); // どの塗りピクセルから来たか
+  const dist = new Uint8Array(W * H).fill(255);
+
+  // 塗り済みピクセルをキューに積む
+  for (let i = 0; i < W * H; i++) {
+    if (origData[i * 4 + 3] > 10) {
+      bfsQueue[bfsTail++] = i;
+      srcOf[i] = i;
+      dist[i] = 0;
+    }
+  }
+
+  // BFSでexpandR歩分だけ隣接ピクセルに色を伝播
+  while (bfsHead < bfsTail) {
+    const idx = bfsQueue[bfsHead++];
+    const d = dist[idx];
+    if (d >= expandR) continue;
+    const x = idx % W, y = (idx / W) | 0;
+    const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
+    x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
+    for (const ni of nb) {
+      if (ni < 0 || srcOf[ni] >= 0) continue;
+      srcOf[ni] = srcOf[idx]; // 最近傍の塗り色を引き継ぐ
+      dist[ni] = d + 1;
+      bfsQueue[bfsTail++] = ni;
+    }
+  }
+
+  // srcOfが設定されたピクセルに色を適用して出力キャンバスに描画
   const tmp = document.createElement('canvas');
   tmp.width = W; tmp.height = H;
   const tc = tmp.getContext('2d');
   tc.drawImage(canvasFill, 0, 0);
   const id = tc.getImageData(0, 0, W, H);
-  const d = id.data;
-  const lineMap = buildLineMap(ctxResult, W, H);
+  const fd = id.data;
 
-  for (let pass = 0; pass < expandR; pass++) {
-    const src = new Uint8ClampedArray(d);
-    for (let i = 0; i < W * H; i++) {
-      if (!lineMap[i]) continue;
-      const a = src[i * 4 + 3];
-      if (a > 0) continue;
-      const x = i % W, y = (i / W) | 0;
-      let found = -1;
-      for (let dy = -2; dy <= 2 && found < 0; dy++) for (let dx = -2; dx <= 2 && found < 0; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-        const ni = ny * W + nx;
-        if (src[ni * 4 + 3] > 0) found = ni;
-      }
-      if (found >= 0) {
-        d[i * 4] = src[found * 4];
-        d[i * 4 + 1] = src[found * 4 + 1];
-        d[i * 4 + 2] = src[found * 4 + 2];
-        d[i * 4 + 3] = src[found * 4 + 3];
-      }
-    }
+  for (let i = 0; i < W * H; i++) {
+    // 元々塗りがある or 届かなかったピクセルはスキップ
+    if (srcOf[i] < 0 || origData[i * 4 + 3] > 10) continue;
+    const s = srcOf[i];
+    fd[i * 4] = origData[s * 4];
+    fd[i * 4 + 1] = origData[s * 4 + 1];
+    fd[i * 4 + 2] = origData[s * 4 + 2];
+    fd[i * 4 + 3] = origData[s * 4 + 3];
   }
+
   tc.putImageData(id, 0, 0);
   return tmp;
 }
