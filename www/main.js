@@ -1226,34 +1226,25 @@ function executeLasso() {
     barrier[i] = lineBarrier[i] || lassoEdge[i];
   }
 
-  // ④ シード = ラッソ内部の重心1点（バリア上なら近傍を探す）
-  //    ラッソ外には絶対BFSが漏れない（ラッソ輪郭が完全に壁になっているため）
-  let cx = 0, cy = 0;
-  for (const p of lassoPoints) { cx += p.x; cy += p.y; }
-  cx = Math.round(cx / n); cy = Math.round(cy / n);
-  cx = Math.max(0, Math.min(W - 1, cx));
-  cy = Math.max(0, Math.min(H - 1, cy));
-
-  // 重心がバリア上の場合、スパイラル探索で近傍の空きピクセルを探す
-  let seedIdx = -1;
-  outer: for (let r = 0; r <= 30; r++) {
-    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // 外周のみ
-      const nx = cx + dx, ny = cy + dy;
-      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-      if (!barrier[ny * W + nx]) { seedIdx = ny * W + nx; break outer; }
-    }
+  // ④ シード = ラッソ内部マスクの中でバリアでないピクセルのみ
+  //    buildLassoMaskでラッソ内部を確定し、その中からのみシードを選ぶ
+  //    → ラッソ外のピクセルは絶対にシードにならない
+  const lassoMask = buildLassoMask(lassoPoints, W, H);
+  const seeds = [];
+  for (let i = 0; i < W * H; i++) {
+    if (lassoMask[i] && !barrier[i]) seeds.push(i);
   }
 
-  if (seedIdx < 0) {
+  if (seeds.length === 0) {
     setStatus('塗れる領域が見つからないにょ🐮', 'err'); return;
   }
 
-  // ⑤ BFS（シード1点から。バリアで止まるのでラッソ外には漏れない）
-  let mask = bfsFill([seedIdx], barrier, W, H);
+  // ⑤ BFS（ラッソ内部のシード群から。バリアで止まる）
+  //    ラッソ輪郭がバリアになっているのでラッソ外には広がらない
+  let mask = bfsFill(seeds, barrier, W, H);
 
-  // ⑥ 塗り領域を膨張 → 線の下に潜り込んで白線をなくす（gapR + 固定3px）
-  mask = dilateFillMask(mask, W, H, gapR + 3);
+  // ⑥ gapR分だけ膨張（隙間とじ用）。線下埋めはbuildFillExpandedCanvasが担当
+  if (gapR > 0) mask = dilateFillMask(mask, W, H, gapR);
 
   if (mode === 'erase') {
     applyEraseToFill(mask, W, H);
@@ -1310,8 +1301,8 @@ function executeBucket(pos) {
   // ③ BFS
   let mask = bfsFill(seeds, barrier, W, H);
 
-  // ④ 【クリスタ方式】塗り領域膨張で線の下に潜り込む（gapR + 固定3px）
-  mask = dilateFillMask(mask, W, H, gapR + 3);
+  // ④ gapR分だけ膨張（隙間とじ用）。線下埋めはbuildFillExpandedCanvasが担当
+  if (gapR > 0) mask = dilateFillMask(mask, W, H, gapR);
 
   if (mode === 'erase') {
     applyEraseToFill(mask, W, H);
