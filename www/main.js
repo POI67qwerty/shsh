@@ -811,24 +811,6 @@ function applyEraseToFill(bfsMask, W, H) {
 
 function hexToRgb(hex) { return { r: parseInt(hex.slice(1, 3), 16), g: parseInt(hex.slice(3, 5), 16), b: parseInt(hex.slice(5, 7), 16) }; }
 
-// ============================================================
-// 塗りバリア生成（クリスタ方式）
-// 線画マップ + 既存の塗りピクセル（canvasFill）を合算して壁を作る
-// これにより「塗り済みの色」も境界として機能し、塗りが漏れない
-// includeFill=false にすると消しゴムモード用（塗りを壁にしない）
-// ============================================================
-function buildFillBarrier(lineMap, W, H, includeFill = true) {
-  if (!includeFill) return lineMap;
-  // canvasFillのalphaチャンネルを参照して塗り済みピクセルを検出
-  const fillData = ctxFill.getImageData(0, 0, W, H).data;
-  const barrier = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    // 線画 OR 塗り済みピクセル（alpha > 10）を壁とする
-    barrier[i] = lineMap[i] || (fillData[i * 4 + 3] > 10 ? 1 : 0);
-  }
-  return barrier;
-}
-
 // BFS塗りつぶし（シード配列から）
 // barrier: 超えられない壁（線マップそのもの）
 // bfsFill：Uint32Array固定長キューで高速化
@@ -1144,75 +1126,19 @@ function executeLasso() {
   const lineMap = buildLineMap(sc2, W, H);
   const gapR = parseInt(sliderGapClose.value);
 
-  // ============================================================
-  // 【クリスタK96方式】
-  // ① 線画をgapR膨張して隙間を閉じる
-  // ② ラッソ輪郭線をピクセルに焼き付けて「囲い」として使う
-  // ③ バリア = 線画 + ラッソ輪郭 + 既存塗り（消しゴム除く）
-  // ④ ラッソ内部の重心1点からBFS → ラッソ外に絶対漏れない
-  // ⑤ 塗り領域をgapR膨張して線の下に潜り込む
-  // ============================================================
+  // ① 線をgapR膨張して隙間を埋めたバリアでBFS（従来の隙間とじ）
+  const barrier = gapR > 0 ? dilateBinary(lineMap, W, H, gapR) : lineMap;
 
-  // ① 線画をgapR膨張して隙間とじバリアを作る
-  const lineBarrier = gapR > 0 ? dilateBinary(lineMap, W, H, gapR) : lineMap;
+  // ② ラッソ内部マスクからシードを収集
+  const lassoMask = buildLassoMask(lassoPoints, W, H);
+  const seeds = [];
+  for (let i = 0; i < W * H; i++) { if (lassoMask[i] && !barrier[i]) seeds.push(i); }
 
-  // ② ラッソ輪郭をピクセルに焼き付けて追加バリアにする
-  //    （Bresenham直線でlassoPointsを結んだピクセルを壁にする）
-  const lassoEdge = new Uint8Array(W * H);
-  const n = lassoPoints.length;
-  for (let i = 0; i < n; i++) {
-    const p1 = lassoPoints[i], p2 = lassoPoints[(i + 1) % n];
-    // Bresenham直線描画でラッソ輪郭ピクセルをマーク
-    let x0 = Math.round(p1.x), y0 = Math.round(p1.y);
-    let x1 = Math.round(p2.x), y1 = Math.round(p2.y);
-    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
-    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-    let err = dx - dy;
-    while (true) {
-      if (x0 >= 0 && x0 < W && y0 >= 0 && y0 < H) lassoEdge[y0 * W + x0] = 1;
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 > -dy) { err -= dy; x0 += sx; }
-      if (e2 < dx) { err += dx; y0 += sy; }
-    }
-  }
+  // ③ BFSで塗り領域を検出（バリアで止まる）
+  let mask = bfsFill(seeds, barrier, W, H);
 
-  // ③ バリア = 線画膨張 OR ラッソ輪郭 OR 既存塗り（消しゴムモード除く）
-  const includeFill = (mode !== 'erase');
-  const fillData = includeFill ? ctxFill.getImageData(0, 0, W, H).data : null;
-  const barrier = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    barrier[i] = lineBarrier[i] || lassoEdge[i]
-      || (fillData && fillData[i * 4 + 3] > 10 ? 1 : 0);
-  }
-
-  // ④ シード = ラッソ内部の重心1点（バリア上なら近傍を探す）
-  //    ラッソ外には絶対BFSが漏れない（ラッソ輪郭が完全に壁になっているため）
-  let cx = 0, cy = 0;
-  for (const p of lassoPoints) { cx += p.x; cy += p.y; }
-  cx = Math.round(cx / n); cy = Math.round(cy / n);
-  cx = Math.max(0, Math.min(W - 1, cx));
-  cy = Math.max(0, Math.min(H - 1, cy));
-
-  // 重心がバリア上の場合、スパイラル探索で近傍の空きピクセルを探す
-  let seedIdx = -1;
-  outer: for (let r = 0; r <= 30; r++) {
-    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // 外周のみ
-      const nx = cx + dx, ny = cy + dy;
-      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-      if (!barrier[ny * W + nx]) { seedIdx = ny * W + nx; break outer; }
-    }
-  }
-
-  if (seedIdx < 0) {
-    setStatus('塗れる領域が見つからないにょ🐮', 'err'); return;
-  }
-
-  // ⑤ BFS（シード1点から。バリアで止まるのでラッソ外には漏れない）
-  let mask = bfsFill([seedIdx], barrier, W, H);
-
-  // ⑥ 塗り領域をgapR膨張 → 線の下に潜り込んで白線をなくす
+  // ④ 【クリスタ方式】塗り領域をgapR分膨張 → 線の下に潜り込ませる
+  //    これにより線ピクセルも塗られ、白い線が残らなくなる
   if (gapR > 0) mask = dilateFillMask(mask, W, H, gapR);
 
   if (mode === 'erase') {
@@ -1250,12 +1176,8 @@ function executeBucket(pos) {
   const lineMap = buildLineMap(sc2, W, H);
   const gapR = parseInt(sliderBucketGap.value);
 
-  // ① 線をgapR膨張して隙間とじ線バリアを作る
-  const lineBarrier = gapR > 0 ? dilateBinary(lineMap, W, H, gapR) : lineMap;
-
-  // 【クリスタ方式】消しゴム以外は既存の塗りピクセルもバリアに含める
-  const includeFill = (mode !== 'erase');
-  const barrier = buildFillBarrier(lineBarrier, W, H, includeFill);
+  // ① 線をgapR膨張して隙間とじバリアを作る
+  const barrier = gapR > 0 ? dilateBinary(lineMap, W, H, gapR) : lineMap;
 
   // ② シード設定（クリックした点がバリア上なら近傍で探す）
   const seedIdx = sy * W + sx;
