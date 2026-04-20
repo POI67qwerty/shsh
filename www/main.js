@@ -1272,23 +1272,18 @@ function executeLasso() {
   // ⑤ 塗り領域をgapR膨張して線の下に潜り込む
   // ============================================================
 
-  // ① ラッソ内部マスクを生成（BFSの展開をこの範囲に限定する）
+  // ① ラッソ内部マスクを生成（BFS展開をこの範囲に限定）
   const lassoMask = buildLassoMask(lassoPoints, W, H);
 
-  // ② ラッソ内部でバリアでないピクセルをシードにする
-  //    bfsFillWithGapClose が線画 + 隙間閉じ判定を行う
+  // ② ラッソ内部 かつ 線画でないピクセルをシードに
   const seeds = [];
   for (let i = 0; i < W * H; i++) {
     if (lassoMask[i] && !lineMap[i]) seeds.push(i);
   }
+  if (seeds.length === 0) { setStatus('塗れる領域が見つからないにょ🐮', 'err'); return; }
 
-  if (seeds.length === 0) {
-    setStatus('塗れる領域が見つからないにょ🐮', 'err'); return;
-  }
-
-  // ③ 隙間閉じ付きBFS（allowMask=lassoMaskでラッソ外に絶対漏れない）
-  //    gapR: 指定px以内に対岸の線があればそこで止まる（クリスタ隙間閉じ）
-  let mask = bfsFillWithGapClose(seeds, lineMap, gapR, W, H, lassoMask);
+  // ③ BFS（線画がバリア、lassoMask内に限定）
+  let mask = bfsFill(seeds, lineMap, W, H, lassoMask);
 
   if (mode === 'erase') {
     applyEraseToFill(mask, W, H);
@@ -1336,9 +1331,8 @@ function executeBucket(pos) {
   }
   if (!seeds.length) { setStatus('線の上はクリックしてもうまく塗れないにょ🐮', 'err'); return; }
 
-  // ② 隙間閉じ付きBFS（クリスタ方式）
-  //    gapR: 指定px以内に対岸の線があればそこで止まる
-  let mask = bfsFillWithGapClose(seeds, lineMap, gapR, W, H);
+  // ② BFS（線画がバリア）
+  let mask = bfsFill(seeds, lineMap, W, H);
 
   if (mode === 'erase') {
     applyEraseToFill(mask, W, H);
@@ -2029,24 +2023,20 @@ function renderMerge() {
     if (canvasMerge.width !== W || canvasMerge.height !== H) {
       canvasMerge.width = W; canvasMerge.height = H;
     }
-    // ① 塗りの膨張済みキャンバスを一度だけ生成（merge と fillView で共用）
-    const fillExpanded = _fillExpandEnabled ? buildFillExpandedCanvas() : canvasFill;
-
-    // ② 白背景 + 塗りレイヤー（線下膨張済み）+ 線画をmultiplyで上に
+    // ① 白背景 + 塗りレイヤー + 線画をmultiplyで上に
     ctxMerge.fillStyle = '#ffffff';
     ctxMerge.fillRect(0, 0, W, H);
-    ctxMerge.drawImage(fillExpanded, 0, 0);
+    ctxMerge.drawImage(canvasFill, 0, 0);
     ctxMerge.globalCompositeOperation = 'multiply';
     ctxMerge.drawImage(canvasResult, 0, 0);
     ctxMerge.globalCompositeOperation = 'source-over';
 
-    // ③ 比較用の右側（塗りのみ）も同じ膨張済みキャンバスで更新
-    //    透明部分が市松で見えるよう背景は塗らずそのまま描画
+    // ② 比較用の右側（塗りのみ）も更新
     if (canvasFillView.width !== W || canvasFillView.height !== H) {
       canvasFillView.width = W; canvasFillView.height = H;
     }
     ctxFillView.clearRect(0, 0, W, H);
-    ctxFillView.drawImage(fillExpanded, 0, 0);
+    ctxFillView.drawImage(canvasFill, 0, 0);
 
     // 比較モードのclip更新
     updateCompareClip();
