@@ -2002,17 +2002,25 @@ function renderMerge() {
     if (canvasMerge.width !== W || canvasMerge.height !== H) {
       canvasMerge.width = W; canvasMerge.height = H;
     }
-    // ① 白背景
+    // ① 塗りの膨張済みキャンバスを一度だけ生成（merge と fillView で共用）
+    const fillExpanded = _fillExpandEnabled ? buildFillExpandedCanvas() : canvasFill;
+
+    // ② 白背景 + 塗りレイヤー（線下膨張済み）+ 線画をmultiplyで上に
     ctxMerge.fillStyle = '#ffffff';
     ctxMerge.fillRect(0, 0, W, H);
-    // ② 塗りレイヤー（線下膨張済みキャンバスを使う）
-    //    → 線画の下まで塗りが入っているプレビューになる
-    const fillForMerge = _fillExpandEnabled ? buildFillExpandedCanvas() : canvasFill;
-    ctxMerge.drawImage(fillForMerge, 0, 0);
-    // ③ 線画をmultiplyで重ねる（線画は上のレイヤー扱い）
+    ctxMerge.drawImage(fillExpanded, 0, 0);
     ctxMerge.globalCompositeOperation = 'multiply';
     ctxMerge.drawImage(canvasResult, 0, 0);
     ctxMerge.globalCompositeOperation = 'source-over';
+
+    // ③ 比較用の右側（塗りのみ）も同じ膨張済みキャンバスで更新
+    //    透明部分が市松で見えるよう背景は塗らずそのまま描画
+    if (canvasFillView.width !== W || canvasFillView.height !== H) {
+      canvasFillView.width = W; canvasFillView.height = H;
+    }
+    ctxFillView.clearRect(0, 0, W, H);
+    ctxFillView.drawImage(fillExpanded, 0, 0);
+
     // 比較モードのclip更新
     updateCompareClip();
   });
