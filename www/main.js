@@ -783,16 +783,11 @@ function applyColorToFill(bfsMask, W, H, col, alpha) {
   if (fillHistory.length > 30) fillHistory.shift();
   fillRedo = [];
 
-  // 【クリスタ方式】塗りマスクを線画ピクセルを含む全域に染み込ませる
-  // 距離制限なしBFSで塗りが届く全ピクセル（線下含む）に色を拡散
-  // ただし元の塗りマスクが届かないほど遠い場所には広げすぎないよう
-  // 画像サイズの1/4を上限にする
-  const MAX_FILL_EXPAND = Math.round(Math.min(W, H) / 4);
-  const expandedMask = dilateMaskBFS(bfsMask, W, H, MAX_FILL_EXPAND);
-
+  // canvasFill には膨張なしの塗りマスクをそのまま書き込む
+  // 線下への膨張は buildFillExpandedCanvas() が担当（保存・比較時のみ適用）
   const fd_data = ctxFill.getImageData(0, 0, W, H), fd = fd_data.data;
   for (let i = 0; i < W * H; i++) {
-    if (!expandedMask[i]) continue;
+    if (!bfsMask[i]) continue;
     // 既存の色を完全に上書き（自動塗り分け後の色変更に対応）
     if (alpha >= 0.999) {
       fd[i * 4] = col.r;
@@ -1441,47 +1436,10 @@ async function runAutoFill() {
     if (lbl >= 0 && colAssign[lbl]) pixelCol[i] = colAssign[lbl];
   }
 
-  // 【クリスタ方式・完全版】線画ピクセルを含む全ピクセルに色を染み込ませる
-  // 戦略：pixelColが決まったピクセルから距離制限なしでBFS膨張し、
-  //       まだ色が決まってない全ピクセルを最近傍の色で埋める
-  //       ただし gapR > 0 の場合は gapR 分だけ先に barrier 膨張済みなので
-  //       線の外に漏れすぎないよう上限を設ける（画像幅の1/4を上限）
-  const MAX_EXPAND = Math.max(gapR + 30, Math.round(Math.min(W, H) / 4));
-
-  const autoQueue = new Int32Array(W * H);
-  const autoDist = new Int32Array(W * H).fill(-1); // -1=未訪問
-  const autoSrc = new Int32Array(W * H).fill(-1);
-  let autoHead = 0, autoTail = 0;
-
-  // ① 色が確定したピクセルをキューに積む（距離0）
+  // canvasFill には膨張なし（元の pixelCol の範囲のみ）を書き込む
+  // 線下への膨張は buildFillExpandedCanvas() が担当（保存・比較時のみ）
   for (let i = 0; i < W * H; i++) {
-    if (pixelCol[i]) {
-      autoDist[i] = 0;
-      autoSrc[i] = i;
-      autoQueue[autoTail++] = i;
-    }
-  }
-
-  // ② BFS：距離制限MAX_EXPANDまで全方向に色を伝播
-  while (autoHead < autoTail) {
-    const idx = autoQueue[autoHead++];
-    const d = autoDist[idx];
-    if (d >= MAX_EXPAND) continue;
-    const x = idx % W, y = (idx / W) | 0;
-    const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
-    x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
-    for (const ni of nb) {
-      if (ni < 0 || autoDist[ni] >= 0) continue; // 既訪問はスキップ
-      autoDist[ni] = d + 1;
-      autoSrc[ni] = autoSrc[idx];
-      autoQueue[autoTail++] = ni;
-    }
-  }
-
-  // ③ 色源が決まった全ピクセルを塗りキャンバスに書き込む
-  for (let i = 0; i < W * H; i++) {
-    if (autoSrc[i] < 0) continue; // 色が届かなかったピクセルはスキップ
-    const col = pixelCol[autoSrc[i]];
+    const col = pixelCol[i];
     if (!col) continue;
     const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
     if (ao < 0.001) { fd[i * 4 + 3] = 0; continue; }
@@ -2047,9 +2005,11 @@ function renderMerge() {
     // ① 白背景
     ctxMerge.fillStyle = '#ffffff';
     ctxMerge.fillRect(0, 0, W, H);
-    // ② 塗りレイヤー
-    ctxMerge.drawImage(canvasFill, 0, 0);
-    // ③ 線画をmultiplyで重ねる
+    // ② 塗りレイヤー（線下膨張済みキャンバスを使う）
+    //    → 線画の下まで塗りが入っているプレビューになる
+    const fillForMerge = _fillExpandEnabled ? buildFillExpandedCanvas() : canvasFill;
+    ctxMerge.drawImage(fillForMerge, 0, 0);
+    // ③ 線画をmultiplyで重ねる（線画は上のレイヤー扱い）
     ctxMerge.globalCompositeOperation = 'multiply';
     ctxMerge.drawImage(canvasResult, 0, 0);
     ctxMerge.globalCompositeOperation = 'source-over';
@@ -2246,58 +2206,56 @@ function buildLineAlphaCanvas() {
 }
 
 // ============================================================
-// 塗りのみ保存用キャンバスを作る（クリスタ方式）
-// BFS波状膨張で塗り済みピクセルからexpandR px外側に色を広げる
-// → 線画ピクセルの下まで完全に色を埋めるため、
-//   線画を非表示にしても隙間ができない
+// 塗りのみ保存・比較用キャンバスを作る（クリスタ方式）
+// canvasFill の塗りピクセルから距離制限なしで BFS 膨張し、
+// 線画ピクセルを含む全周辺ピクセルに最近傍の塗り色を染み込ませる。
+// ただし「塗りが全くない空白領域」には届かない（最近傍の塗りから
+// 一方向にしか広がらないため、完全に孤立した空白は埋めない）。
+// ※ canvasFill 自体は変更しない（プレビュー表示は元のまま保つ）
 // ============================================================
-function buildFillExpandedCanvas(expandR = 6) {
+function buildFillExpandedCanvas() {
   const W = canvasFill.width, H = canvasFill.height;
   const origData = ctxFill.getImageData(0, 0, W, H).data;
 
-  // BFS距離膨張：塗り済みピクセルからexpandR歩まで外側に色を広げる
+  // BFS：塗り済みピクセルから距離制限なしで全方向に色を伝播
+  // 各ピクセルに「最近傍の塗りピクセルのインデックス」を記録する
   const bfsQueue = new Int32Array(W * H);
   let bfsHead = 0, bfsTail = 0;
-  const srcOf = new Int32Array(W * H).fill(-1); // どの塗りピクセルから来たか
-  const dist = new Uint8Array(W * H).fill(255);
+  const srcOf = new Int32Array(W * H).fill(-1); // -1=未到達
 
-  // 塗り済みピクセルをキューに積む
+  // 塗り済みピクセルをキューの起点に積む
   for (let i = 0; i < W * H; i++) {
     if (origData[i * 4 + 3] > 10) {
-      bfsQueue[bfsTail++] = i;
       srcOf[i] = i;
-      dist[i] = 0;
+      bfsQueue[bfsTail++] = i;
     }
   }
 
-  // BFSでexpandR歩分だけ隣接ピクセルに色を伝播
+  // BFS 全伝播（距離制限なし：線幅がどんなに太くても確実に埋まる）
   while (bfsHead < bfsTail) {
     const idx = bfsQueue[bfsHead++];
-    const d = dist[idx];
-    if (d >= expandR) continue;
     const x = idx % W, y = (idx / W) | 0;
     const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
     x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
     for (const ni of nb) {
-      if (ni < 0 || srcOf[ni] >= 0) continue;
-      srcOf[ni] = srcOf[idx]; // 最近傍の塗り色を引き継ぐ
-      dist[ni] = d + 1;
+      if (ni < 0 || srcOf[ni] >= 0) continue; // 範囲外 or 既到達はスキップ
+      srcOf[ni] = srcOf[idx]; // 最近傍の塗り色インデックスを引き継ぐ
       bfsQueue[bfsTail++] = ni;
     }
   }
 
-  // srcOfが設定されたピクセルに色を適用して出力キャンバスに描画
+  // 出力キャンバスを作り、未塗りピクセルに最近傍の塗り色を書き込む
   const tmp = document.createElement('canvas');
   tmp.width = W; tmp.height = H;
   const tc = tmp.getContext('2d');
-  tc.drawImage(canvasFill, 0, 0);
+  tc.drawImage(canvasFill, 0, 0); // 元の塗りをベースにコピー
   const id = tc.getImageData(0, 0, W, H);
   const fd = id.data;
 
   for (let i = 0; i < W * H; i++) {
-    // 元々塗りがある or 届かなかったピクセルはスキップ
-    if (srcOf[i] < 0 || origData[i * 4 + 3] > 10) continue;
-    const s = srcOf[i];
+    // 元々塗りがある or BFSが届かなかったピクセルはスキップ
+    if (origData[i * 4 + 3] > 10 || srcOf[i] < 0) continue;
+    const s = srcOf[i]; // 最近傍の塗りピクセル
     fd[i * 4] = origData[s * 4];
     fd[i * 4 + 1] = origData[s * 4 + 1];
     fd[i * 4 + 2] = origData[s * 4 + 2];
