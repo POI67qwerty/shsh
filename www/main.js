@@ -781,64 +781,19 @@ function dilateBinary(map, W, H, r) {
 function applyColorToFill(bfsMask, W, H, col, alpha) {
   fillHistory.push(ctxFill.getImageData(0, 0, W, H));
   if (fillHistory.length > 30) fillHistory.shift();
-  fillRedo = [];
-
-  // 【クリスタ方式】塗りマスクを線幅分BFS膨張して線の下まで埋める
-  // gapRとは独立した固定膨張（線画の太さに関わらず常に線下まで塗る）
-  const LINE_EXPAND = 3; // 線幅の半分程度（px）
-  const expandedMask = dilateMaskBFS(bfsMask, W, H, LINE_EXPAND);
-
+  fillRedo = [];  // 新しい操作をしたらREDOは消える
   const fd_data = ctxFill.getImageData(0, 0, W, H), fd = fd_data.data;
   for (let i = 0; i < W * H; i++) {
-    if (!expandedMask[i]) continue;
-    // 既存の色を完全に上書き（自動塗り分け後の色変更に対応）
-    if (alpha >= 0.999) {
-      fd[i * 4] = col.r;
-      fd[i * 4 + 1] = col.g;
-      fd[i * 4 + 2] = col.b;
-      fd[i * 4 + 3] = 255;
-    } else {
-      const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
-      if (ao < 0.001) { fd[i * 4 + 3] = 0; continue; }
-      fd[i * 4] = Math.round((col.r * a1 + fd[i * 4] * a0 * (1 - a1)) / ao);
-      fd[i * 4 + 1] = Math.round((col.g * a1 + fd[i * 4 + 1] * a0 * (1 - a1)) / ao);
-      fd[i * 4 + 2] = Math.round((col.b * a1 + fd[i * 4 + 2] * a0 * (1 - a1)) / ao);
-      fd[i * 4 + 3] = Math.round(ao * 255);
-    }
+    if (!bfsMask[i]) continue;
+    const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
+    if (ao < 0.001) { fd[i * 4 + 3] = 0; continue; }
+    fd[i * 4] = Math.round((col.r * a1 + fd[i * 4] * a0 * (1 - a1)) / ao);
+    fd[i * 4 + 1] = Math.round((col.g * a1 + fd[i * 4 + 1] * a0 * (1 - a1)) / ao);
+    fd[i * 4 + 2] = Math.round((col.b * a1 + fd[i * 4 + 2] * a0 * (1 - a1)) / ao);
+    fd[i * 4 + 3] = Math.round(ao * 255);
   }
   ctxFill.putImageData(fd_data, 0, 0);
   renderMerge();
-}
-
-// ============================================================
-// BFS距離膨張（Uint8Array mask を r px 外側に広げる）
-// dilateFillMask と同じ役割だが bitmask 入力専用・高速版
-// ============================================================
-function dilateMaskBFS(mask, W, H, r) {
-  if (r <= 0) return mask;
-  const out = new Uint8Array(mask); // 元マスクをコピー
-  const queue = new Int32Array(W * H);
-  const dist = new Uint8Array(W * H).fill(255);
-  let head = 0, tail = 0;
-  // 塗り済みピクセルをキューに
-  for (let i = 0; i < W * H; i++) {
-    if (mask[i]) { dist[i] = 0; queue[tail++] = i; }
-  }
-  while (head < tail) {
-    const idx = queue[head++];
-    const d = dist[idx];
-    if (d >= r) continue;
-    const x = idx % W, y = (idx / W) | 0;
-    const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
-    x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
-    for (const ni of nb) {
-      if (ni < 0 || dist[ni] <= d + 1) continue;
-      dist[ni] = d + 1;
-      out[ni] = 1;
-      queue[tail++] = ni;
-    }
-  }
-  return out;
 }
 
 function applyEraseToFill(bfsMask, W, H) {
@@ -933,7 +888,7 @@ let _lastTap = 0;
 // PCドラッグパン用
 let _mousePan = false, _panStartX = 0, _panStartY = 0, _panScrollX = 0, _panScrollY = 0;
 let _panMode = false;
-let _fillExpandEnabled = true;  // 線画埋めはデフォルトON（保存時に線の下まで塗りが入る）
+let _fillExpandEnabled = false;
 
 const resultBox = document.getElementById('resultBox');
 
@@ -1222,11 +1177,13 @@ function executeLasso() {
     }
   }
 
-  // ③ バリア = 線画膨張 + ラッソ輪郭線のみ
-  //    既存の塗りはバリアにしない → 自動塗り分け後の色上書きに対応
+  // ③ バリア = 線画膨張 OR ラッソ輪郭 OR 既存塗り（消しゴムモード除く）
+  const includeFill = (mode !== 'erase');
+  const fillData = includeFill ? ctxFill.getImageData(0, 0, W, H).data : null;
   const barrier = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
-    barrier[i] = lineBarrier[i] || lassoEdge[i];
+    barrier[i] = lineBarrier[i] || lassoEdge[i]
+      || (fillData && fillData[i * 4 + 3] > 10 ? 1 : 0);
   }
 
   // ④ シード = ラッソ内部の重心1点（バリア上なら近傍を探す）
@@ -1255,8 +1212,8 @@ function executeLasso() {
   // ⑤ BFS（シード1点から。バリアで止まるのでラッソ外には漏れない）
   let mask = bfsFill([seedIdx], barrier, W, H);
 
-  // ⑥ 塗り領域を膨張 → 線の下に潜り込んで白線をなくす（gapR + 固定3px）
-  mask = dilateFillMask(mask, W, H, gapR + 3);
+  // ⑥ 塗り領域をgapR膨張 → 線の下に潜り込んで白線をなくす
+  if (gapR > 0) mask = dilateFillMask(mask, W, H, gapR);
 
   if (mode === 'erase') {
     applyEraseToFill(mask, W, H);
@@ -1296,8 +1253,9 @@ function executeBucket(pos) {
   // ① 線をgapR膨張して隙間とじ線バリアを作る
   const lineBarrier = gapR > 0 ? dilateBinary(lineMap, W, H, gapR) : lineMap;
 
-  // 線画膨張のみをバリアにする（既存塗りはバリアにしない→色上書き対応）
-  const barrier = lineBarrier;
+  // 【クリスタ方式】消しゴム以外は既存の塗りピクセルもバリアに含める
+  const includeFill = (mode !== 'erase');
+  const barrier = buildFillBarrier(lineBarrier, W, H, includeFill);
 
   // ② シード設定（クリックした点がバリア上なら近傍で探す）
   const seedIdx = sy * W + sx;
@@ -1313,8 +1271,8 @@ function executeBucket(pos) {
   // ③ BFS
   let mask = bfsFill(seeds, barrier, W, H);
 
-  // ④ 【クリスタ方式】塗り領域膨張で線の下に潜り込む（gapR + 固定3px）
-  mask = dilateFillMask(mask, W, H, gapR + 3);
+  // ④ 【クリスタ方式】塗り領域膨張で線の下に潜り込む
+  if (gapR > 0) mask = dilateFillMask(mask, W, H, gapR);
 
   if (mode === 'erase') {
     applyEraseToFill(mask, W, H);
@@ -1439,39 +1397,26 @@ async function runAutoFill() {
     if (lbl >= 0 && colAssign[lbl]) pixelCol[i] = colAssign[lbl];
   }
 
-  // 【クリスタ方式】膨張：gapR（隙間とじ）+ LINE_EXPAND（線下埋め）
-  // gapRだけだと0のとき線下が埋まらないため固定分を加算する
-  const LINE_EXPAND = 3; // 線幅の半分程度（常時適用）
-  const totalExpand = gapR + LINE_EXPAND;
-
-  // BFS色膨張：pixelColが設定されたピクセルから外側にtotalExpand歩分広げる
-  // 各ピクセルの最近傍色源(srcOf)を記録し、その色を引き継ぐ
-  const autoQueue = new Int32Array(W * H);
-  const autoDist = new Uint8Array(W * H).fill(255);
-  const autoSrc = new Int32Array(W * H).fill(-1);
-  let autoHead = 0, autoTail = 0;
-  for (let i = 0; i < W * H; i++) {
-    if (pixelCol[i]) { autoDist[i] = 0; autoSrc[i] = i; autoQueue[autoTail++] = i; }
-  }
-  while (autoHead < autoTail) {
-    const idx = autoQueue[autoHead++];
-    const d = autoDist[idx];
-    if (d >= totalExpand) continue;
-    const x = idx % W, y = (idx / W) | 0;
-    const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
-    x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
-    for (const ni of nb) {
-      if (ni < 0 || autoDist[ni] <= d + 1) continue;
-      autoDist[ni] = d + 1;
-      autoSrc[ni] = autoSrc[idx];
-      autoQueue[autoTail++] = ni;
+  // 【クリスタ方式】gapR分膨張：色が決まっている領域を外に広げる
+  // これで線ピクセルにも色が入り白い線が消える
+  if (gapR > 0) {
+    // 横方向膨張
+    const tmpH = new Array(W * H).fill(null);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!pixelCol[y * W + x]) continue;
+      const x0 = Math.max(0, x - gapR), x1 = Math.min(W - 1, x + gapR);
+      for (let nx = x0; nx <= x1; nx++) if (!tmpH[y * W + nx]) tmpH[y * W + nx] = pixelCol[y * W + x];
+    }
+    // 縦方向膨張
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!tmpH[y * W + x]) continue;
+      const y0 = Math.max(0, y - gapR), y1 = Math.min(H - 1, y + gapR);
+      for (let ny = y0; ny <= y1; ny++) if (!pixelCol[ny * W + x]) pixelCol[ny * W + x] = tmpH[y * W + x];
     }
   }
 
   for (let i = 0; i < W * H; i++) {
-    // 色源が設定されていないピクセルはスキップ
-    if (autoSrc[i] < 0) continue;
-    const col = pixelCol[autoSrc[i]];
+    const col = pixelCol[i];
     if (!col) continue;
     const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
     if (ao < 0.001) { fd[i * 4 + 3] = 0; continue; }
@@ -1956,19 +1901,13 @@ if (btnPanToggle) btnPanToggle.addEventListener('click', () => {
   btnPanToggle.textContent = _panMode ? '✋ PAN ON' : '✋ PAN';
   updateCanvasCursor();
 });
-// 線画埋めボタン：デフォルトON
-if (btnFillExpandToggle) {
-  btnFillExpandToggle.textContent = '線画埋め: ON';
-  btnFillExpandToggle.style.borderColor = 'var(--accent)';
-  btnFillExpandToggle.style.color = 'var(--accent)';
-  btnFillExpandToggle.addEventListener('click', () => {
-    _fillExpandEnabled = !_fillExpandEnabled;
-    btnFillExpandToggle.textContent = _fillExpandEnabled ? '線画埋め: ON' : '線画埋め: OFF';
-    btnFillExpandToggle.style.borderColor = _fillExpandEnabled ? 'var(--accent)' : 'var(--border)';
-    btnFillExpandToggle.style.color = _fillExpandEnabled ? 'var(--accent)' : '';
-    renderMerge();
-  });
-}
+if (btnFillExpandToggle) btnFillExpandToggle.addEventListener('click', () => {
+  _fillExpandEnabled = !_fillExpandEnabled;
+  btnFillExpandToggle.textContent = _fillExpandEnabled ? '線画埋め: ON' : '線画埋め: OFF';
+  btnFillExpandToggle.style.borderColor = _fillExpandEnabled ? 'var(--accent)' : 'var(--border)';
+  btnFillExpandToggle.style.color = _fillExpandEnabled ? 'var(--accent)' : '';
+  renderMerge();
+});
 
 btnDownload.addEventListener('click', () => {
   if (!srcImage) { setStatus('まず画像を読み込んでにょ🐮', 'err'); return; }
@@ -2236,64 +2175,42 @@ function buildLineAlphaCanvas() {
 }
 
 // ============================================================
-// 塗りのみ保存用キャンバスを作る（クリスタ方式）
-// BFS波状膨張で塗り済みピクセルからexpandR px外側に色を広げる
-// → 線画ピクセルの下まで完全に色を埋めるため、
-//   線画を非表示にしても隙間ができない
+// 塗りの下地を線画の内側まで広げたキャンバスを作る
+// 線画ピクセル（黒）に隣接する塗り色をにじませて埋める
 // ============================================================
-function buildFillExpandedCanvas(expandR = 6) {
+function buildFillExpandedCanvas(expandR = 3) {
   const W = canvasFill.width, H = canvasFill.height;
-  const origData = ctxFill.getImageData(0, 0, W, H).data;
-
-  // BFS距離膨張：塗り済みピクセルからexpandR歩まで外側に色を広げる
-  const bfsQueue = new Int32Array(W * H);
-  let bfsHead = 0, bfsTail = 0;
-  const srcOf = new Int32Array(W * H).fill(-1); // どの塗りピクセルから来たか
-  const dist = new Uint8Array(W * H).fill(255);
-
-  // 塗り済みピクセルをキューに積む
-  for (let i = 0; i < W * H; i++) {
-    if (origData[i * 4 + 3] > 10) {
-      bfsQueue[bfsTail++] = i;
-      srcOf[i] = i;
-      dist[i] = 0;
-    }
-  }
-
-  // BFSでexpandR歩分だけ隣接ピクセルに色を伝播
-  while (bfsHead < bfsTail) {
-    const idx = bfsQueue[bfsHead++];
-    const d = dist[idx];
-    if (d >= expandR) continue;
-    const x = idx % W, y = (idx / W) | 0;
-    const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
-    x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
-    for (const ni of nb) {
-      if (ni < 0 || srcOf[ni] >= 0) continue;
-      srcOf[ni] = srcOf[idx]; // 最近傍の塗り色を引き継ぐ
-      dist[ni] = d + 1;
-      bfsQueue[bfsTail++] = ni;
-    }
-  }
-
-  // srcOfが設定されたピクセルに色を適用して出力キャンバスに描画
   const tmp = document.createElement('canvas');
   tmp.width = W; tmp.height = H;
   const tc = tmp.getContext('2d');
   tc.drawImage(canvasFill, 0, 0);
   const id = tc.getImageData(0, 0, W, H);
-  const fd = id.data;
+  const d = id.data;
+  const lineMap = buildLineMap(ctxResult, W, H);
 
-  for (let i = 0; i < W * H; i++) {
-    // 元々塗りがある or 届かなかったピクセルはスキップ
-    if (srcOf[i] < 0 || origData[i * 4 + 3] > 10) continue;
-    const s = srcOf[i];
-    fd[i * 4] = origData[s * 4];
-    fd[i * 4 + 1] = origData[s * 4 + 1];
-    fd[i * 4 + 2] = origData[s * 4 + 2];
-    fd[i * 4 + 3] = origData[s * 4 + 3];
+  for (let pass = 0; pass < expandR; pass++) {
+    const src = new Uint8ClampedArray(d);
+    for (let i = 0; i < W * H; i++) {
+      if (!lineMap[i]) continue;
+      const a = src[i * 4 + 3];
+      if (a > 0) continue;
+      const x = i % W, y = (i / W) | 0;
+      let found = -1;
+      for (let dy = -2; dy <= 2 && found < 0; dy++) for (let dx = -2; dx <= 2 && found < 0; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        const ni = ny * W + nx;
+        if (src[ni * 4 + 3] > 0) found = ni;
+      }
+      if (found >= 0) {
+        d[i * 4] = src[found * 4];
+        d[i * 4 + 1] = src[found * 4 + 1];
+        d[i * 4 + 2] = src[found * 4 + 2];
+        d[i * 4 + 3] = src[found * 4 + 3];
+      }
+    }
   }
-
   tc.putImageData(id, 0, 0);
   return tmp;
 }
