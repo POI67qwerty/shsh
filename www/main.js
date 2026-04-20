@@ -783,10 +783,12 @@ function applyColorToFill(bfsMask, W, H, col, alpha) {
   if (fillHistory.length > 30) fillHistory.shift();
   fillRedo = [];
 
-  // 【クリスタ方式】塗りマスクを線幅分BFS膨張して線の下まで埋める
-  // gapRとは独立した固定膨張（線画の太さに関わらず常に線下まで塗る）
-  const LINE_EXPAND = 3; // 線幅の半分程度（px）
-  const expandedMask = dilateMaskBFS(bfsMask, W, H, LINE_EXPAND);
+  // 【クリスタ方式】塗りマスクを線画ピクセルを含む全域に染み込ませる
+  // 距離制限なしBFSで塗りが届く全ピクセル（線下含む）に色を拡散
+  // ただし元の塗りマスクが届かないほど遠い場所には広げすぎないよう
+  // 画像サイズの1/4を上限にする
+  const MAX_FILL_EXPAND = Math.round(Math.min(W, H) / 4);
+  const expandedMask = dilateMaskBFS(bfsMask, W, H, MAX_FILL_EXPAND);
 
   const fd_data = ctxFill.getImageData(0, 0, W, H), fd = fd_data.data;
   for (let i = 0; i < W * H; i++) {
@@ -1439,38 +1441,46 @@ async function runAutoFill() {
     if (lbl >= 0 && colAssign[lbl]) pixelCol[i] = colAssign[lbl];
   }
 
-  // 【クリスタ方式】膨張：gapR（隙間とじ）+ LINE_EXPAND（線下埋め）
-  // gapRだけだと0のとき線下が埋まらないため固定分を加算する
-  const LINE_EXPAND = 3; // 線幅の半分程度（常時適用）
-  const totalExpand = gapR + LINE_EXPAND;
+  // 【クリスタ方式・完全版】線画ピクセルを含む全ピクセルに色を染み込ませる
+  // 戦略：pixelColが決まったピクセルから距離制限なしでBFS膨張し、
+  //       まだ色が決まってない全ピクセルを最近傍の色で埋める
+  //       ただし gapR > 0 の場合は gapR 分だけ先に barrier 膨張済みなので
+  //       線の外に漏れすぎないよう上限を設ける（画像幅の1/4を上限）
+  const MAX_EXPAND = Math.max(gapR + 30, Math.round(Math.min(W, H) / 4));
 
-  // BFS色膨張：pixelColが設定されたピクセルから外側にtotalExpand歩分広げる
-  // 各ピクセルの最近傍色源(srcOf)を記録し、その色を引き継ぐ
   const autoQueue = new Int32Array(W * H);
-  const autoDist = new Uint8Array(W * H).fill(255);
+  const autoDist = new Int32Array(W * H).fill(-1); // -1=未訪問
   const autoSrc = new Int32Array(W * H).fill(-1);
   let autoHead = 0, autoTail = 0;
+
+  // ① 色が確定したピクセルをキューに積む（距離0）
   for (let i = 0; i < W * H; i++) {
-    if (pixelCol[i]) { autoDist[i] = 0; autoSrc[i] = i; autoQueue[autoTail++] = i; }
+    if (pixelCol[i]) {
+      autoDist[i] = 0;
+      autoSrc[i] = i;
+      autoQueue[autoTail++] = i;
+    }
   }
+
+  // ② BFS：距離制限MAX_EXPANDまで全方向に色を伝播
   while (autoHead < autoTail) {
     const idx = autoQueue[autoHead++];
     const d = autoDist[idx];
-    if (d >= totalExpand) continue;
+    if (d >= MAX_EXPAND) continue;
     const x = idx % W, y = (idx / W) | 0;
     const nb = [y > 0 ? idx - W : -1, y < H - 1 ? idx + W : -1,
     x > 0 ? idx - 1 : -1, x < W - 1 ? idx + 1 : -1];
     for (const ni of nb) {
-      if (ni < 0 || autoDist[ni] <= d + 1) continue;
+      if (ni < 0 || autoDist[ni] >= 0) continue; // 既訪問はスキップ
       autoDist[ni] = d + 1;
       autoSrc[ni] = autoSrc[idx];
       autoQueue[autoTail++] = ni;
     }
   }
 
+  // ③ 色源が決まった全ピクセルを塗りキャンバスに書き込む
   for (let i = 0; i < W * H; i++) {
-    // 色源が設定されていないピクセルはスキップ
-    if (autoSrc[i] < 0) continue;
+    if (autoSrc[i] < 0) continue; // 色が届かなかったピクセルはスキップ
     const col = pixelCol[autoSrc[i]];
     if (!col) continue;
     const a0 = fd[i * 4 + 3] / 255, a1 = alpha, ao = a1 + a0 * (1 - a1);
